@@ -232,6 +232,8 @@ export interface AgentItem extends Capability {
     lastRun: number | null;
     body: string | null;
     editable: boolean;
+    /** Prompt larger than ccmon shows: read-only here. */
+    truncated: boolean;
 }
 
 export interface RunRecord {
@@ -340,7 +342,7 @@ export const api = {
     stopManaged: (sid: string) => invoke<boolean>('stop_managed', { sid }),
     projects: () => invoke<string[]>('list_projects'),
     catalog: (sid: string | null) => invoke<Capability[]>('get_catalog', { sid }),
-    listAgents: (sid: string | null, cwd: string | null) => invoke<AgentItem[]>('list_agents', { sid, cwd }),
+    listAgents: (sid: string | null, cwd: string | null, light = false) => invoke<AgentItem[]>('list_agents', { sid, cwd, light }),
     listWorkflows: (sid: string | null, cwd: string | null) => invoke<AgentItem[]>('list_workflows', { sid, cwd }),
     sessionProject: (sid: string) => invoke<string | null>('session_project', { sid }),
     agentTools: () => invoke<string[]>('agent_tools'),

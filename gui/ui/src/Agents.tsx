@@ -186,6 +186,7 @@ function Detail({
                 )}
             </dl>
             {readOnly && <div className="muted small ag-note">{readOnly}</div>}
+            {item.truncated && <div className="muted small ag-note">Prompt quá dài để sửa trong ccmon — chỉ hiện phần đầu; hãy sửa file trực tiếp.</div>}
             {item.body != null && item.body.trim() !== '' && (
                 <section className="ag-sec">
                     <div className="ag-sec-head">

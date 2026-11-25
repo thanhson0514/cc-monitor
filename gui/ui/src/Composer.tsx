@@ -147,9 +147,14 @@ export function atQuery(text: string, caret: number): { start: number; q: string
     return m ? { start: caret - m[2].length - 1, q: m[2] } : null;
 }
 
-/** Agents a session may use: not off in ccmon, Claude Code or this session's overlay. */
+/**
+ * Agents a session may use: real ones (a file on disk or Claude Code built-in, not
+ * history-only names) that are not off in ccmon, Claude Code or this session's overlay.
+ */
 function usableAgents(list: AgentItem[], o: Overlay): AgentItem[] {
-    return list.filter((a) => !a.disabled && a.enabledGlobally && !capDisabled(o, 'agent', a.id));
+    return list.filter(
+        (a) => (a.path != null || a.scope === 'builtIn') && !a.disabled && a.enabledGlobally && !capDisabled(o, 'agent', a.id)
+    );
 }
 
 /**
@@ -171,7 +176,7 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
     const [atIdx, setAtIdx] = useState(0);
     useEffect(() => {
         let ignore = false;
-        api.listAgents(sid, sid ? null : cwd)
+        api.listAgents(sid, sid ? null : cwd, true)
             .then((a) => !ignore && setAgents(a))
             .catch(() => !ignore && setAgents([]));
         return () => {
@@ -410,7 +415,11 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
                     value={overlay.mainAgent ?? ''}
                     disabled={locked}
                     aria-label="Chạy session như agent"
-                    title="Chạy session như agent (--agent): session dùng prompt, tools và model của agent đó. Gõ @ trong ô nhập để tham chiếu agent thủ công."
+                    title={
+                        overlay.mainAgent && !usable.some((a) => a.id === overlay.mainAgent)
+                            ? `Agent ${overlay.mainAgent} đang tắt (trang Agents hoặc cấu hình) — session sẽ chạy như bình thường, không dùng --agent.`
+                            : 'Chạy session như agent (--agent): session dùng prompt, tools và model của agent đó. Gõ @ trong ô nhập để tham chiếu agent thủ công.'
+                    }
                     onChange={(e) => update({ ...overlay, mainAgent: e.target.value || null })}
                 >
                     <option value="">agent: không</option>
@@ -420,7 +429,7 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
                         </option>
                     ))}
                     {overlay.mainAgent && !usable.some((a) => a.id === overlay.mainAgent) && (
-                        <option value={overlay.mainAgent}>agent: {overlay.mainAgent} (đang tắt)</option>
+                        <option value={overlay.mainAgent}>agent: {overlay.mainAgent} (đang tắt — sẽ không dùng)</option>
                     )}
                 </select>
                 <span className="cmp-hint" title={PERMISSION_HINT}>

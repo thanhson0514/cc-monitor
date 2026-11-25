@@ -51,6 +51,7 @@ fn valid_tool(t: &str) -> bool {
         && t.chars().all(ok_char)
         && t == t.trim()
         && !t.contains(": ")
+        && !t.ends_with(':')
 }
 
 fn valid_model(m: &str) -> bool {
@@ -181,6 +182,60 @@ fn write_agent_file(path: &Path, body: &str, overwrite: bool) -> Result<(), Stri
     res
 }
 
+/// Frontmatter keys the form writes; every other key of an existing file is kept.
+const OWNED_KEYS: [&str; 4] = ["name", "description", "tools", "model"];
+
+/// Raw frontmatter lines of `text` that belong to keys ccmon does not own,
+/// verbatim (a key line plus its indented / list continuation lines). Empty
+/// when the file has no closed `---` fence.
+pub fn unowned_frontmatter(text: &str) -> String {
+    let rest = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let Some(rest) = rest
+        .strip_prefix("---\r\n")
+        .or_else(|| rest.strip_prefix("---\n"))
+    else {
+        return String::new();
+    };
+    let mut out = String::new();
+    let mut keep = true;
+    for line in rest.split_inclusive('\n') {
+        if line.trim_end() == "---" {
+            return out;
+        }
+        let top = !line.starts_with([' ', '\t', '-']) && !line.trim().is_empty();
+        if top && !line.trim_start().starts_with('#') {
+            let key = line.split_once(':').map(|(k, _)| k.trim()).unwrap_or("");
+            keep = !OWNED_KEYS.contains(&key);
+        }
+        if keep {
+            out.push_str(line);
+            if !line.ends_with('\n') {
+                out.push('\n');
+            }
+        }
+    }
+    String::new() // unterminated: not frontmatter
+}
+
+/// Project files must stay inside the project: a symlinked `.claude` or
+/// `.claude/agents` pointing elsewhere is refused.
+fn confine(dir: &Path, root: &Path) -> Result<(), String> {
+    let d = dir
+        .canonicalize()
+        .map_err(|e| format!("Không đọc được thư mục: {e}"))?;
+    let r = root
+        .canonicalize()
+        .map_err(|e| format!("Không đọc được thư mục dự án: {e}"))?;
+    if d.starts_with(&r) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Thư mục agents trỏ ra ngoài dự án ({}) — không ghi",
+            d.display()
+        ))
+    }
+}
+
 pub fn save_agent_in(
     claude_home: &Path,
     project: Option<&Path>,
@@ -188,8 +243,27 @@ pub fn save_agent_in(
     def: &AgentDef,
     overwrite: bool,
 ) -> Result<PathBuf, String> {
-    let body = render_agent(def)?;
+    let mut body = render_agent(def)?;
     let path = agent_path(scope, claude_home, project, &def.name)?;
+    let dir = path.parent().ok_or("Đường dẫn không hợp lệ")?;
+    if let (true, Some(root)) = (scope == "project", project) {
+        // check before creating anything, then again once it exists
+        if let Some(existing) = dir.ancestors().find(|a| a.exists()) {
+            confine(existing, root)?;
+        }
+        std::fs::create_dir_all(dir).map_err(|e| format!("Không tạo được thư mục: {e}"))?;
+        confine(dir, root)?;
+    }
+    if overwrite {
+        if let Ok(old) = std::fs::read_to_string(&path) {
+            let extra = unowned_frontmatter(&old);
+            if !extra.is_empty() {
+                // owned keys first, then the untouched ones, before the closing fence
+                let at = body.find("---\n\n").ok_or("internal: no fence")?;
+                body.insert_str(at, &extra);
+            }
+        }
+    }
     write_agent_file(&path, &body, overwrite)?;
     Ok(path)
 }
@@ -222,21 +296,26 @@ pub struct ItemDto {
     pub last_run: Option<i64>,
     /// Agent prompt (frontmatter stripped) or workflow script, capped.
     pub body: Option<String>,
-    /// User/project agent files may be edited from the page.
+    /// User/project agent files may be edited from the page (not when the
+    /// prompt is too long to round-trip through the form).
     pub editable: bool,
+    /// Body larger than the page shows: not editable in ccmon.
+    pub truncated: bool,
 }
 
 pub type AgentDto = ItemDto;
 pub type WorkflowDto = ItemDto;
 
-fn read_body(c: &Capability) -> Option<String> {
+/// `(body, truncated)`; the body is capped at [`BODY_MAX`].
+fn read_body(c: &Capability) -> Option<(String, bool)> {
     let text = std::fs::read_to_string(c.path.as_ref()?).ok()?;
     let mut body = if c.kind == CapKind::Agent {
         frontmatter::parse(&text).1.trim().to_string()
     } else {
         text
     };
-    if body.len() > BODY_MAX {
+    let truncated = body.len() > BODY_MAX;
+    if truncated {
         let mut cut = BODY_MAX;
         while !body.is_char_boundary(cut) {
             cut -= 1;
@@ -244,7 +323,15 @@ fn read_body(c: &Capability) -> Option<String> {
         body.truncate(cut);
         body.push_str("\n…");
     }
-    Some(body)
+    Some((body, truncated))
+}
+
+/// Without reading the body: a file bigger than the cap is treated as truncated.
+fn too_big(c: &Capability) -> bool {
+    c.path
+        .as_ref()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .is_some_and(|m| m.len() > BODY_MAX as u64)
 }
 
 /// Claude Code's own agent types (no file on disk), for names known only from history.
@@ -294,15 +381,25 @@ pub fn item_rows(
     caps.into_iter()
         .map(|c| {
             let st = stats.get(&c.id).copied().unwrap_or_default();
+            let (body, truncated) = if with_body {
+                match read_body(&c) {
+                    Some((b, t)) => (Some(b), t),
+                    None => (None, false),
+                }
+            } else {
+                (None, too_big(&c))
+            };
             let editable = kind == CapKind::Agent
                 && c.path.is_some()
+                && !truncated
                 && matches!(c.scope, Scope::User | Scope::Project);
             ItemDto {
                 disabled: disabled.contains(&c.id),
                 runs: st.runs,
                 last_run: st.last,
-                body: if with_body { read_body(&c) } else { None },
+                body,
                 editable,
+                truncated,
                 cap: CapabilityDto::from(&c),
             }
         })
@@ -380,14 +477,23 @@ impl Ctx {
         kind: CapKind,
         sid: Option<&str>,
         cwd: Option<&str>,
+        with_body: bool,
     ) -> Result<Vec<ItemDto>, String> {
         let project = self.project(sid, cwd)?;
         let items = self.items(project.as_deref());
         let stats = stats_cached(&self.root);
         let reg = state::load_registry();
         Ok(match kind {
-            CapKind::Agent => item_rows(kind, items, &stats.agents, &reg.disabled_agents, true),
-            _ => item_rows(kind, items, &stats.workflows, &reg.disabled_workflows, true),
+            CapKind::Agent => {
+                item_rows(kind, items, &stats.agents, &reg.disabled_agents, with_body)
+            }
+            _ => item_rows(
+                kind,
+                items,
+                &stats.workflows,
+                &reg.disabled_workflows,
+                with_body,
+            ),
         })
     }
 
@@ -457,13 +563,16 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
 }
 
 #[tauri::command]
+/// `light`: without prompt bodies (composer picker).
 pub async fn list_agents(
     state: State<'_, Shared>,
     sid: Option<String>,
     cwd: Option<String>,
+    light: Option<bool>,
 ) -> Result<Vec<AgentDto>, String> {
     let c = Ctx::of(&state);
-    blocking(move || c.list(CapKind::Agent, sid.as_deref(), cwd.as_deref())).await?
+    let with_body = !light.unwrap_or(false);
+    blocking(move || c.list(CapKind::Agent, sid.as_deref(), cwd.as_deref(), with_body)).await?
 }
 
 #[tauri::command]
@@ -473,7 +582,7 @@ pub async fn list_workflows(
     cwd: Option<String>,
 ) -> Result<Vec<WorkflowDto>, String> {
     let c = Ctx::of(&state);
-    blocking(move || c.list(CapKind::Workflow, sid.as_deref(), cwd.as_deref())).await?
+    blocking(move || c.list(CapKind::Workflow, sid.as_deref(), cwd.as_deref(), true)).await?
 }
 
 #[tauri::command]
@@ -804,5 +913,89 @@ mod tests {
         assert!(!r.disabled_agents.contains("a") && r.disabled_workflows.contains("w"));
         assert!(set_disabled_in(t.path(), CapKind::Skill, "s", true).is_err());
         assert!(set_disabled_in(t.path(), CapKind::Agent, "", true).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn project_save_refuses_symlinked_agents_dir_outside_project() {
+        let t = tempfile::tempdir().unwrap();
+        let home = t.path().join("home/.claude");
+        let proj = t.path().join("proj");
+        let outside = t.path().join("outside");
+        std::fs::create_dir_all(proj.join(".claude")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, proj.join(".claude/agents")).unwrap();
+        let e = save_agent_in(&home, Some(&proj), "project", &def("x"), false).unwrap_err();
+        assert!(!e.starts_with(EXISTS_PREFIX), "{e}");
+        assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+        // a symlinked .claude pointing outside is refused too
+        let proj2 = t.path().join("proj2");
+        std::fs::create_dir_all(&proj2).unwrap();
+        std::os::unix::fs::symlink(&outside, proj2.join(".claude")).unwrap();
+        assert!(save_agent_in(&home, Some(&proj2), "project", &def("x"), false).is_err());
+        assert!(!outside.join("agents/x.md").exists());
+        // a normal project dir works
+        let ok = t.path().join("proj3");
+        std::fs::create_dir_all(&ok).unwrap();
+        let p = save_agent_in(&home, Some(&ok), "project", &def("x"), false).unwrap();
+        assert!(p.starts_with(&ok));
+    }
+
+    #[test]
+    fn overwrite_keeps_unowned_frontmatter_keys() {
+        let t = tempfile::tempdir().unwrap();
+        let home = t.path().join(".claude");
+        let p = home.join("agents/reviewer.md");
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(
+            &p,
+            "---\nname: reviewer\ndescription: old\ncolor: red\ntools: Read\npermissionMode: plan\nhooks:\n  PreToolUse:\n    - matcher: Bash\nmodel: opus\n---\nold body\n",
+        )
+        .unwrap();
+        save_agent_in(&home, None, "user", &def("reviewer"), true).unwrap();
+        let text = std::fs::read_to_string(&p).unwrap();
+        let (fm, body) = frontmatter::parse(&text);
+        assert_eq!(fm["color"], "red", "{text}");
+        assert_eq!(fm["permissionMode"], "plan", "{text}");
+        assert!(
+            text.contains("hooks:\n  PreToolUse:\n    - matcher: Bash\n"),
+            "{text}"
+        );
+        assert_eq!(fm["description"], "Reviews diffs");
+        assert_eq!(fm["model"], "sonnet");
+        assert_eq!(text.matches("model:").count(), 1, "{text}");
+        assert_eq!(text.matches("tools:").count(), 1, "{text}");
+        assert!(!body.contains("old body"));
+    }
+
+    #[test]
+    fn long_prompt_is_not_editable() {
+        let t = tempfile::tempdir().unwrap();
+        let f = t.path().join("big.md");
+        std::fs::write(
+            &f,
+            format!("---\nname: big\n---\n{}", "x".repeat(BODY_MAX + 10)),
+        )
+        .unwrap();
+        let small = t.path().join("small.md");
+        std::fs::write(&small, "---\nname: small\n---\nhi\n").unwrap();
+        let items = vec![
+            cap("big", Scope::User, Some(f)),
+            cap("small", Scope::User, Some(small)),
+        ];
+        let none = BTreeSet::new();
+        let stats = Default::default();
+        for with_body in [true, false] {
+            let rows = item_rows(CapKind::Agent, items.clone(), &stats, &none, with_body);
+            assert!(!rows[0].editable && rows[0].truncated, "{with_body}");
+            assert!(rows[1].editable && !rows[1].truncated, "{with_body}");
+            assert_eq!(rows[1].body.is_some(), with_body);
+        }
+    }
+
+    #[test]
+    fn tool_with_trailing_colon_rejected() {
+        assert!(!valid_tool("Bash:"));
+        assert!(valid_tool("Bash(git:*)"));
     }
 }

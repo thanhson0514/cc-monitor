@@ -29,8 +29,15 @@ pub fn save_registry(r: &Registry) -> io::Result<()> {
 
 /// Merge ccmon-wide switches into a session overlay. The overlay's
 /// `workflows_off` stays a user-set master switch and is never derived.
+/// A main agent disabled in the registry is dropped (`--agent` not passed).
 pub fn effective(o: &Overlay, r: &Registry) -> Overlay {
     let mut e = o.clone();
+    if e.main_agent
+        .as_ref()
+        .is_some_and(|a| r.disabled_agents.contains(a))
+    {
+        e.main_agent = None;
+    }
     e.disabled_agents.extend(r.disabled_agents.iter().cloned());
     e.disabled_workflows
         .extend(r.disabled_workflows.iter().cloned());
@@ -193,7 +200,12 @@ mod tests {
         };
         let e = effective(&o, &r);
         assert_eq!(e.disabled_agents, ["a", "b", "c"].map(String::from).into());
-        assert_eq!(e.main_agent, Some("b".into()));
+        // a ccmon-disabled agent is never used as the main agent
+        assert_eq!(e.main_agent, None);
+        assert_eq!(
+            effective(&o, &Registry::default()).main_agent,
+            Some("b".into())
+        );
         let r2 = Registry {
             disabled_workflows: ["w".to_string()].into(),
             ..Default::default()
