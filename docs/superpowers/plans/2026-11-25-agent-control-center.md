@@ -309,7 +309,7 @@ fn notification_also_found_in_user_text() { /* cùng payload nhưng nằm trong 
 - Produces:
   - Lệnh `get_catalog(cwd: Option<String>) -> Vec<CapabilityDto>`; `get_session_usage(sid: String) -> Vec<UsageDto>` (`UsageDto { kind, id, state: "unavailable"|"available"|"used", count, last }`). Cache catalog 5 s theo cwd.
   - `App.tsx`: state `page: 'thread' | 'library' | 'agents'` + nút trên thanh tiêu đề; phím tắt `Ctrl+1/2/3`.
-  - `Library.tsx`: tab Skills | Plugins | MCP; ô lọc; mỗi dòng: tên, mô tả (1 dòng), scope chip, trạng thái toàn cục; khi có session đang chọn: cột “Session này” = Đã dùng ×n / Khả dụng / Không có, sắp “Đã dùng” lên đầu; công tắc bật/tắt cho session (Task 9 nối dây — ở task này hiển thị disabled với tooltip “Chỉ áp dụng cho session chạy từ ccmon”).
+  - `Library.tsx`: tab Skills | Plugins | MCP; ô lọc; mỗi dòng: tên, mô tả (1 dòng), scope chip, trạng thái toàn cục; khi có session đang chọn: cột “Session này” = Đã dùng ×n / Khả dụng / Không có, sắp “Đã dùng” lên đầu; công tắc bật/tắt cho session (Task 10 nối dây — ở task này hiển thị disabled với tooltip “Chỉ áp dụng cho session chạy từ ccmon”).
 - [ ] **Step 1:** Test Rust `catalog_dto_serializes_scope_and_kind` (snapshot JSON camelCase).
 - [ ] **Step 2–4:** FAIL → implement → `cargo test --workspace && (cd gui/ui && yarn build)` PASS; kiểm thủ công bằng skill `run`.
 - [ ] **Step 5:** Commit `feat(gui): library page for skills, plugins and MCP`.
