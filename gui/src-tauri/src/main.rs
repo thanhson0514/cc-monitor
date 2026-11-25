@@ -739,18 +739,23 @@ fn get_diff(
 
 /// Last bytes of a background task's output file. Only `*/tasks/*.output` under the
 /// temp dir or `/tmp/claude-*` are read (see `cc_monitor::tasktail`); anything else is `gone`.
+/// Async + `spawn_blocking`: file I/O never runs on the main thread.
 #[tauri::command]
-fn tail_task_output(path: String, max: Option<u64>) -> TailDto {
-    let t = cc_monitor::tasktail::tail_task_output(
-        Path::new(&path),
-        max.unwrap_or(cc_monitor::tasktail::TAIL_MAX),
-    );
-    TailDto {
-        text: t.text,
-        truncated: t.truncated,
-        gone: t.gone,
-        size: t.size,
-    }
+async fn tail_task_output(path: String, max: Option<u64>) -> Result<TailDto, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let t = cc_monitor::tasktail::tail_task_output(
+            Path::new(&path),
+            max.unwrap_or(cc_monitor::tasktail::TAIL_MAX),
+        );
+        TailDto {
+            text: t.text,
+            truncated: t.truncated,
+            gone: t.gone,
+            size: t.size,
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

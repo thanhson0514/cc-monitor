@@ -41,9 +41,13 @@ fn under_allowed_root(p: &Path) -> bool {
 
 /// Canonical path when `p` is a `*.output` file inside a directory named `tasks`,
 /// under the temp dir or a `/tmp/claude-*` directory. Symlinks and `..` are resolved
-/// before checking, so escapes are rejected.
+/// before checking, so escapes are rejected. Only regular files pass: opening a
+/// FIFO (or device) would block forever.
 fn resolve_task_output(p: &Path) -> Option<PathBuf> {
     let c = p.canonicalize().ok()?;
+    if !std::fs::metadata(&c).is_ok_and(|m| m.is_file()) {
+        return None;
+    }
     let ok_name = c.extension().is_some_and(|e| e == "output");
     let ok_dir = c
         .parent()
@@ -156,5 +160,35 @@ mod tests {
             .join("etc")
             .join("passwd");
         assert!(!is_task_output_path(&dots));
+    }
+
+    #[test]
+    fn tail_rejects_non_regular_files() {
+        let d = tasks_dir("special");
+        let dir = d.join("dir.output");
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(tail_task_output(&dir, TAIL_MAX).gone);
+        #[cfg(unix)]
+        {
+            let fifo = d.join("fifo.output");
+            let _ = std::fs::remove_file(&fifo);
+            let ok = std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .is_ok_and(|s| s.success());
+            if ok {
+                assert!(!is_task_output_path(&fifo));
+                // Must return instead of blocking in open().
+                let (tx, rx) = std::sync::mpsc::channel();
+                let p = fifo.clone();
+                std::thread::spawn(move || {
+                    let _ = tx.send(tail_task_output(&p, TAIL_MAX));
+                });
+                let t = rx
+                    .recv_timeout(std::time::Duration::from_secs(2))
+                    .expect("tail_task_output blocked on a FIFO");
+                assert!(t.gone);
+            }
+        }
     }
 }

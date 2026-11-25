@@ -30,6 +30,9 @@ pub struct BgTask {
     pub started: Option<i64>,
     pub ended: Option<i64>,
     pub summary: Option<String>,
+    /// Last transcript ts seen when the session was finalized and this task
+    /// turned `Unknown` (see `Registry::finalize_unknown`).
+    pub finalized_at: Option<i64>,
 }
 
 /// Background tasks by id, in launch order.
@@ -74,13 +77,17 @@ impl Registry {
     }
 
     /// Tasks running at `ts`: started at or before it and not yet ended.
+    /// An `Unknown` task (never notified, session closed) still counts for
+    /// moments up to its finalization — a past Yield did wait on it — but not
+    /// for later ones (a resumed session's Yield does not wait on dead tasks).
     pub fn pending_at(&self, ts: i64) -> Vec<&BgTask> {
         self.tasks
             .iter()
             .filter(|t| {
-                t.state != BgState::Unknown
-                    && t.started.is_some_and(|s| s <= ts)
+                t.started.is_some_and(|s| s <= ts)
                     && t.ended.is_none_or(|e| e > ts)
+                    && (t.state != BgState::Unknown
+                        || (t.ended.is_none() && t.finalized_at.is_none_or(|f| ts <= f)))
             })
             .collect()
     }
@@ -94,12 +101,14 @@ impl Registry {
     }
 
     /// Session is closed: tasks that never got a notice have an unknown outcome.
-    /// Returns true if any task changed. Unknown tasks are not counted by `pending_at`.
-    pub fn finalize_unknown(&mut self) -> bool {
+    /// `at` = the last transcript ts seen so far. Returns true if any task
+    /// changed. `pending_at` counts Unknown tasks only up to `at`.
+    pub fn finalize_unknown(&mut self, at: Option<i64>) -> bool {
         let mut changed = false;
         for t in &mut self.tasks {
             if t.state == BgState::Running {
                 t.state = BgState::Unknown;
+                t.finalized_at = at;
                 changed = true;
             }
         }
@@ -122,6 +131,7 @@ mod tests {
             started: Some(started),
             ended: None,
             summary: None,
+            finalized_at: None,
         }
     }
 
@@ -152,12 +162,18 @@ mod tests {
     }
 
     #[test]
-    fn unknown_tasks_are_not_pending() {
+    fn unknown_tasks_pending_only_up_to_finalization() {
         let mut r = Registry::default();
         r.launch(task("a", 10));
-        assert!(r.finalize_unknown());
-        assert!(!r.finalize_unknown());
+        assert!(r.finalize_unknown(Some(40)));
+        assert!(!r.finalize_unknown(Some(90)));
+        // A past Yield (closed session) still lists what it waited on.
+        assert_eq!(r.pending_at(30).len(), 1);
+        assert_eq!(r.pending_at(40).len(), 1);
+        assert!(r.pending_at(5).is_empty());
+        // A later Yield in a resumed session does not wait on the dead task.
         assert!(r.pending_at(50).is_empty());
+        assert_eq!(r.get("a").unwrap().finalized_at, Some(40));
     }
 
     #[test]

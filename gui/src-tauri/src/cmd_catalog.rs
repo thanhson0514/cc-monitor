@@ -3,6 +3,7 @@
 use cc_monitor::catalog::usage::{inventory_only, session_usage, UseState};
 use cc_monitor::catalog::{CapKind, Capability, Catalog, ScanCtx, Scope};
 use cc_monitor::platform;
+use cc_monitor::store::Store;
 use cc_monitor::thread::Thread;
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -126,8 +127,8 @@ pub fn listing(catalog: &Catalog, threads: &[&Thread]) -> Vec<CapabilityDto> {
 
 /// Session cwd taken from the store only (never from the webview), so project
 /// files are read only under a session's own working directory.
-fn session_cwd(state: &Shared, sid: &str) -> Option<String> {
-    let store = state.store.lock().unwrap();
+fn session_cwd(store: &Mutex<Store>, sid: &str) -> Option<String> {
+    let store = store.lock().unwrap_or_else(|e| e.into_inner());
     store.sessions.get(sid)?.main.cwd().map(str::to_string)
 }
 
@@ -142,17 +143,26 @@ fn session_threads<'a>(store: &'a cc_monitor::store::Store, sid: &str) -> Vec<&'
     threads
 }
 
-/// `sid = None` (or unknown): user-level scan only.
+/// `sid = None` (or unknown): user-level scan only. Runs off the main
+/// thread; the disk scan happens without the store lock.
 #[tauri::command]
-pub fn get_catalog(state: State<Shared>, sid: Option<String>) -> Vec<CapabilityDto> {
-    let cwd = sid.as_deref().and_then(|s| session_cwd(&state, s));
-    let catalog = catalog_for(cwd.as_deref());
-    let store = state.store.lock().unwrap();
-    let threads = sid
-        .as_deref()
-        .map(|s| session_threads(&store, s))
-        .unwrap_or_default();
-    listing(&catalog, &threads)
+pub async fn get_catalog(
+    state: State<'_, Shared>,
+    sid: Option<String>,
+) -> Result<Vec<CapabilityDto>, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let cwd = sid.as_deref().and_then(|s| session_cwd(&store, s));
+        let catalog = catalog_for(cwd.as_deref());
+        let store = store.lock().unwrap_or_else(|e| e.into_inner());
+        let threads = sid
+            .as_deref()
+            .map(|s| session_threads(&store, s))
+            .unwrap_or_default();
+        listing(&catalog, &threads)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 pub fn usage_dtos(threads: &[&Thread], catalog: &Catalog) -> Vec<UsageDto> {
@@ -164,16 +174,24 @@ pub fn usage_dtos(threads: &[&Thread], catalog: &Catalog) -> Vec<UsageDto> {
 }
 
 #[tauri::command]
-pub fn get_session_usage(state: State<Shared>, sid: String) -> Vec<UsageDto> {
-    let cwd = session_cwd(&state, &sid);
-    // Scan outside the store lock (disk I/O).
-    let catalog = catalog_for(cwd.as_deref());
-    let store = state.store.lock().unwrap();
-    let threads = session_threads(&store, &sid);
-    if threads.is_empty() {
-        return Vec::new();
-    }
-    usage_dtos(&threads, &catalog)
+pub async fn get_session_usage(
+    state: State<'_, Shared>,
+    sid: String,
+) -> Result<Vec<UsageDto>, String> {
+    let store = state.store.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let cwd = session_cwd(&store, &sid);
+        // Scan outside the store lock (disk I/O).
+        let catalog = catalog_for(cwd.as_deref());
+        let store = store.lock().unwrap_or_else(|e| e.into_inner());
+        let threads = session_threads(&store, &sid);
+        if threads.is_empty() {
+            return Vec::new();
+        }
+        usage_dtos(&threads, &catalog)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

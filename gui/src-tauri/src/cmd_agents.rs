@@ -389,10 +389,16 @@ pub fn item_rows(
             } else {
                 (None, too_big(&c))
             };
+            // Saving writes `<name>.md`: only offer editing when that is
+            // this very file, or a save would refuse or fork a duplicate.
             let editable = kind == CapKind::Agent
-                && c.path.is_some()
                 && !truncated
-                && matches!(c.scope, Scope::User | Scope::Project);
+                && matches!(c.scope, Scope::User | Scope::Project)
+                && valid_agent_name(&c.name)
+                && c.path
+                    .as_deref()
+                    .and_then(|p| p.file_stem())
+                    .is_some_and(|s| s == c.name.as_str());
             ItemDto {
                 disabled: disabled.contains(&c.id),
                 runs: st.runs,
@@ -991,6 +997,30 @@ mod tests {
             assert!(rows[1].editable && !rows[1].truncated, "{with_body}");
             assert_eq!(rows[1].body.is_some(), with_body);
         }
+    }
+
+    #[test]
+    fn only_valid_name_matching_file_is_editable() {
+        let t = tempfile::tempdir().unwrap();
+        let mk = |file: &str, name: &str| {
+            let f = t.path().join(file);
+            std::fs::write(&f, format!("---\nname: {name}\n---\nhi\n")).unwrap();
+            cap(name, Scope::User, Some(f))
+        };
+        let items = vec![
+            mk("ok.md", "ok"),
+            mk("Code_Reviewer.md", "Code_Reviewer"),
+            mk("other-file.md", "named"),
+        ];
+        let rows = item_rows(
+            CapKind::Agent,
+            items,
+            &Default::default(),
+            &BTreeSet::new(),
+            false,
+        );
+        let ed: Vec<_> = rows.iter().map(|r| r.editable).collect();
+        assert_eq!(ed, [true, false, false]);
     }
 
     #[test]

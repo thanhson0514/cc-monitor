@@ -326,6 +326,13 @@ fn spawn_retrying(spec: &LaunchSpec) -> io::Result<Child> {
             use std::os::unix::process::CommandExt;
             cmd.process_group(0); // own group, killed as a whole by kill_tree
         }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            // CREATE_NO_WINDOW: the GUI has no console, so without this every
+            // claude.exe / claude.cmd child would open a visible console window.
+            cmd.creation_flags(0x0800_0000);
+        }
         let r = cmd.spawn();
         match r {
             Err(e) if cfg!(unix) && e.raw_os_error() == Some(26) && tries < 20 => {
@@ -545,7 +552,7 @@ impl Manager {
             return Ok(new);
         };
         if let Some(info) = live.get(sid) {
-            if self.sessions.get(sid).map(|e| e.s.pid()) != Some(info.pid) {
+            if !self.owns_live(sid, info.pid) {
                 return Err(ControlError::SessionLiveElsewhere);
             }
         }
@@ -612,6 +619,22 @@ impl Manager {
         self.sessions.get(sid).map(|e| e.s.state())
     }
 
+    /// A live registry entry (pid `live_pid`) for `sid` is ccmon's own when we
+    /// hold a non-exited process for it — whatever its pid: with a wrapper
+    /// launcher (`claude.cmd` -> cmd.exe -> node) our child's pid never
+    /// matches the one claude records. An exited entry still counts on a
+    /// pid match (stale registry file).
+    pub fn owns_live(&self, sid: &str, live_pid: u32) -> bool {
+        self.sessions.get(sid).is_some_and(|e| {
+            !matches!(e.s.state(), RunState::Exited { .. }) || e.s.pid() == live_pid
+        })
+    }
+
+    /// Remove every managed session without stopping it (see `stop_parallel`).
+    pub fn take_all(&mut self) -> Vec<(String, ManagedSession)> {
+        self.sessions.drain().map(|(k, e)| (k, e.s)).collect()
+    }
+
     pub fn pid(&self, sid: &str) -> Option<u32> {
         self.sessions.get(sid).map(|e| e.s.pid())
     }
@@ -627,6 +650,28 @@ impl Manager {
             .iter()
             .map(|(k, e)| (k.clone(), e.s.state()))
             .collect()
+    }
+}
+
+/// Stop sessions concurrently (each `Drop` waits up to `STOP_GRACE`), waiting
+/// at most `cap` overall; stragglers keep stopping on their own threads.
+pub fn stop_parallel(sessions: Vec<ManagedSession>, cap: Duration) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let n = sessions.len();
+    for s in sessions {
+        let tx = tx.clone();
+        std::thread::spawn(move || {
+            s.stop();
+            let _ = tx.send(());
+        });
+    }
+    drop(tx);
+    let deadline = std::time::Instant::now() + cap;
+    for _ in 0..n {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        if rx.recv_timeout(left).is_err() {
+            break;
+        }
     }
 }
 
@@ -765,6 +810,64 @@ done
             .unwrap();
         wait_for("second turn", || f.stdin_lines().len() == 2);
         assert_eq!(f.log().len(), 1);
+    }
+
+    #[test]
+    fn own_running_session_is_never_live_elsewhere() {
+        let f = fake(false);
+        let mut m = manager(&f);
+        let o = Overlay::default();
+        m.send(Some("w1"), f.dir.path(), "hi", &o, &HashMap::new())
+            .unwrap();
+        wait_for("idle", || m.state("w1") == Some(RunState::Idle));
+        // Wrapper launcher: the registry pid is not our child's pid.
+        let other = m.pid("w1").unwrap() + 100_000;
+        assert!(m.owns_live("w1", other));
+        m.send(Some("w1"), f.dir.path(), "again", &o, &live("w1", other))
+            .unwrap();
+        wait_for("second turn", || f.stdin_lines().len() == 2);
+        assert!(!m.owns_live("nope", other));
+    }
+
+    #[test]
+    fn stop_parallel_is_bounded() {
+        let f = fake(true); // turns never finish: each Drop waits the full grace
+        let mut m = manager(&f);
+        for sid in ["p1", "p2", "p3"] {
+            m.send(
+                Some(sid),
+                f.dir.path(),
+                "x",
+                &Overlay::default(),
+                &HashMap::new(),
+            )
+            .unwrap();
+        }
+        wait_for("busy", || {
+            ["p1", "p2", "p3"]
+                .iter()
+                .all(|s| m.state(s) == Some(RunState::Busy))
+        });
+        let pids: Vec<u32> = ["p1", "p2", "p3"]
+            .iter()
+            .map(|s| m.pid(s).unwrap())
+            .collect();
+        let all = m.take_all();
+        assert_eq!(all.len(), 3);
+        assert!(m.sessions().is_empty());
+        let t = Instant::now();
+        stop_parallel(
+            all.into_iter().map(|(_, s)| s).collect(),
+            Duration::from_secs(2),
+        );
+        assert!(
+            t.elapsed() < Duration::from_millis(2500),
+            "{:?}",
+            t.elapsed()
+        );
+        for pid in pids {
+            wait_for("gone", || !Path::new(&format!("/proc/{pid}")).exists());
+        }
     }
 
     #[test]

@@ -109,6 +109,8 @@ pub struct Thread {
     cwd: Option<String>,
     last_tool: Option<String>,
     first_ts: Option<i64>,
+    /// Newest event ts pushed so far.
+    last_ts: Option<i64>,
     user_files: Vec<UserFile>,
     inventory: InventoryDelta,
     inventory_seen: HashSet<String>,
@@ -178,6 +180,7 @@ impl Thread {
     pub fn push(&mut self, ev: Event) {
         if let Some(ts) = ev.ts {
             self.first_ts.get_or_insert(ts);
+            self.last_ts = Some(self.last_ts.map_or(ts, |l| l.max(ts)));
         }
         if let Some(b) = &ev.git_branch {
             self.git_branch = Some(b.clone());
@@ -549,6 +552,7 @@ impl Thread {
             started,
             ended: None,
             summary: None,
+            finalized_at: None,
         });
     }
 
@@ -567,7 +571,7 @@ impl Thread {
 
     /// The session closed: background tasks without a notice have an unknown outcome.
     pub fn finalize_bg_unknown(&mut self) {
-        if self.bg.finalize_unknown() {
+        if self.bg.finalize_unknown(self.last_ts) {
             self.dirty = true;
         }
     }
@@ -1023,6 +1027,24 @@ mod tests {
         t.push(parse_line(r#"{"type":"assistant","uuid":"Y2","parentUuid":"D","timestamp":"2026-11-25T00:00:01.000Z","message":{"content":[{"type":"tool_use","id":"t9","name":"Yield","input":{}}]}}"#).unwrap());
         let items = content(&mut t);
         assert!(tool(&items, "t9").waits.is_empty());
+        // ...while the earlier Yield still lists what it waited on.
+        let ids: Vec<_> = tool(&items, "t3")
+            .waits
+            .iter()
+            .map(|w| w.id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["bgA", "ag1"]);
+    }
+
+    #[test]
+    fn closed_session_past_yield_keeps_waits() {
+        let mut t = thread_from(&bg_lines());
+        t.finalize_bg_unknown();
+        let items = content(&mut t);
+        let y = tool(&items, "t3");
+        let ids: Vec<_> = y.waits.iter().map(|w| w.id.as_str()).collect();
+        assert_eq!(ids, vec!["bgA", "ag1"]);
+        assert!(y.waits.iter().all(|w| w.state == BgState::Unknown));
     }
 
     #[test]

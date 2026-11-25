@@ -13,7 +13,7 @@ use cc_monitor::discovery::{self, LiveInfo, Pinned};
 use cc_monitor::store::Store;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::io::{self, BufRead, BufReader};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -70,7 +70,13 @@ pub struct DtoInputs<'a> {
 }
 
 pub fn control_dto(i: DtoInputs) -> ControlDto {
-    let elsewhere = i.live.is_some_and(|l| i.own_pid != Some(l.pid));
+    let alive = matches!(
+        i.run_state,
+        Some(RunState::Idle | RunState::Starting | RunState::Busy | RunState::Restarting)
+    );
+    // Our own running child is never "elsewhere", whatever pid the registry
+    // shows (wrapper launchers such as claude.cmd).
+    let elsewhere = !alive && i.live.is_some_and(|l| i.own_pid != Some(l.pid));
     let reason = if elsewhere {
         Some("liveElsewhere")
     } else if !i.claude_found {
@@ -78,10 +84,6 @@ pub fn control_dto(i: DtoInputs) -> ControlDto {
     } else {
         None
     };
-    let alive = matches!(
-        i.run_state,
-        Some(RunState::Idle | RunState::Starting | RunState::Busy | RunState::Restarting)
-    );
     let pending = alive
         && i.launched
             .is_some_and(|l| *l != effective(&i.overlay, i.registry));
@@ -113,9 +115,43 @@ pub fn model_list<'a>(seen: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     out
 }
 
-/// Save a session overlay and return what is now stored.
-pub fn persist_overlay(dir: &Path, sid: &str, o: &Overlay) -> io::Result<Overlay> {
-    state::save_overlay_in(dir, sid, o)?;
+pub const PERMISSION_MODES: [&str; 4] = ["default", "acceptEdits", "plan", "bypassPermissions"];
+
+/// One process-wide lock around every overlay load-modify-save, so two quick
+/// toggles cannot land out of order.
+static OVERLAY_WRITE: Mutex<()> = Mutex::new(());
+
+/// A model name passed as a CLI argument: non-empty, no whitespace, not an option.
+pub fn valid_model(m: &str) -> bool {
+    !m.is_empty() && m == m.trim() && !m.starts_with('-') && !m.chars().any(char::is_whitespace)
+}
+
+/// Reject values the CLI would mis-handle (bad effort falls back silently, a
+/// bad permission mode makes claude exit).
+pub fn validate_overlay(o: &Overlay) -> Result<(), String> {
+    if let Some(e) = &o.effort {
+        if !EFFORTS.contains(&e.as_str()) {
+            return Err(format!("Effort không hợp lệ: {e}"));
+        }
+    }
+    if let Some(p) = &o.permission_mode {
+        if !PERMISSION_MODES.contains(&p.as_str()) {
+            return Err(format!("Permission mode không hợp lệ: {p}"));
+        }
+    }
+    if let Some(m) = &o.model {
+        if !valid_model(m) {
+            return Err(format!("Tên model không hợp lệ: {m:?}"));
+        }
+    }
+    Ok(())
+}
+
+/// Validate, save a session overlay and return what is now stored.
+pub fn persist_overlay(dir: &Path, sid: &str, o: &Overlay) -> Result<Overlay, String> {
+    validate_overlay(o)?;
+    let _g = lock(&OVERLAY_WRITE);
+    state::save_overlay_in(dir, sid, o).map_err(|e| e.to_string())?;
     Ok(state::load_overlay_in(dir, sid))
 }
 
@@ -290,9 +326,18 @@ impl Ctx {
         }
         let registry = state::load_registry();
         if let Some(sid) = sid {
-            // The working directory always comes from the store, never the webview.
-            let cwd = session_cwd(&self.store, &sid)
-                .ok_or_else(|| "Không rõ thư mục làm việc của session".to_string())?;
+            // The working directory comes from the store. Only a session ccmon
+            // itself runs but the store has not seen yet (just started) may use
+            // the webview's cwd, and only a known project directory.
+            let cwd = match session_cwd(&self.store, &sid) {
+                Some(c) => c,
+                None if lock(&self.manager).state(&sid).is_some() => {
+                    check_new_cwd(&cwd, &known_cwds(&self.store, &self.root))?
+                        .to_string_lossy()
+                        .into_owned()
+                }
+                None => return Err("Không rõ thư mục làm việc của session".into()),
+            };
             let eff = effective(&state::load_overlay(&sid), &registry);
             let live = self.live();
             return lock(&self.manager)
@@ -301,6 +346,7 @@ impl Ctx {
         }
         let path = check_new_cwd(&cwd, &known_cwds(&self.store, &self.root))?;
         let raw = overlay.unwrap_or_else(state::load_defaults);
+        validate_overlay(&raw)?;
         let eff = effective(&raw, &registry);
         // Lock-free start: the lock is only held for the spawn, never while
         // waiting for the session id.
@@ -317,7 +363,10 @@ impl Ctx {
             drop(s);
             return Err(msg);
         };
-        let _ = state::save_overlay(&new, &raw);
+        if validate_overlay(&raw).is_ok() {
+            let _g = lock(&OVERLAY_WRITE);
+            let _ = state::save_overlay(&new, &raw);
+        }
         lock(&self.pinned).insert(new.clone());
         lock(&self.manager).adopt(new.clone(), s, eff);
         Ok(new)
@@ -347,7 +396,7 @@ pub async fn set_overlay(
 ) -> Result<ControlDto, String> {
     let c = Ctx::of(&state);
     blocking(move || {
-        persist_overlay(&state::state_dir(), &sid, &overlay).map_err(|e| e.to_string())?;
+        persist_overlay(&state::state_dir(), &sid, &overlay)?;
         Ok(c.dto(Some(&sid)))
     })
     .await?
@@ -387,11 +436,14 @@ pub async fn list_projects(state: State<'_, Shared>) -> Result<Vec<String>, Stri
 }
 
 /// Kill every managed child (their own process groups outlive ccmon otherwise).
+/// Sessions are taken out under the lock and stopped in parallel, capped at
+/// ~2 s overall so quitting never hangs N x grace.
 pub fn stop_all(m: &SharedManager) {
-    let mut g = lock(m);
-    for (sid, _) in g.sessions() {
-        g.stop(&sid);
-    }
+    let all = lock(m).take_all();
+    cc_monitor::control::runner::stop_parallel(
+        all.into_iter().map(|(_, s)| s).collect(),
+        Duration::from_secs(2),
+    );
 }
 
 #[cfg(test)]
@@ -523,6 +575,107 @@ mod tests {
         assert_eq!(state::load_overlay_in(d.path(), "abc-1"), o);
         assert!(d.path().join("overlays/abc-1.json").is_file());
         assert!(persist_overlay(d.path(), "../x", &o).is_err());
+    }
+
+    #[test]
+    fn set_overlay_rejects_bad_values() {
+        let d = tempfile::tempdir().unwrap();
+        let bad = [
+            Overlay {
+                effort: Some("huge".into()),
+                ..Default::default()
+            },
+            Overlay {
+                permission_mode: Some("yolo".into()),
+                ..Default::default()
+            },
+            Overlay {
+                model: Some("".into()),
+                ..Default::default()
+            },
+            Overlay {
+                model: Some(" opus".into()),
+                ..Default::default()
+            },
+            Overlay {
+                model: Some("op us".into()),
+                ..Default::default()
+            },
+            Overlay {
+                model: Some("--dangerously-skip-permissions".into()),
+                ..Default::default()
+            },
+        ];
+        for o in bad {
+            assert!(persist_overlay(d.path(), "v1", &o).is_err(), "{o:?}");
+        }
+        assert!(!d.path().join("overlays/v1.json").exists());
+        for e in EFFORTS {
+            let o = Overlay {
+                effort: Some(e.into()),
+                ..Default::default()
+            };
+            assert!(validate_overlay(&o).is_ok());
+        }
+        for p in PERMISSION_MODES {
+            let o = Overlay {
+                permission_mode: Some(p.into()),
+                ..Default::default()
+            };
+            assert!(validate_overlay(&o).is_ok());
+        }
+        let o = Overlay {
+            model: Some("claude-opus-5-5[1m]".into()),
+            ..Default::default()
+        };
+        assert!(persist_overlay(d.path(), "v1", &o).is_ok());
+    }
+
+    #[test]
+    fn overlay_writes_are_serialized() {
+        let d = Arc::new(tempfile::tempdir().unwrap());
+        let hs: Vec<_> = (0..8)
+            .map(|i| {
+                let d = d.clone();
+                std::thread::spawn(move || {
+                    let o = Overlay {
+                        model: Some(format!("m{i}")),
+                        ..Default::default()
+                    };
+                    persist_overlay(d.path(), "c1", &o).unwrap()
+                })
+            })
+            .collect();
+        for h in hs {
+            // Each writer reads back exactly what it wrote (no interleaving).
+            let back = h.join().unwrap();
+            assert!(back.model.is_some());
+        }
+    }
+
+    #[test]
+    fn own_running_child_is_not_live_elsewhere_despite_pid() {
+        let reg = Registry::default();
+        let l = live(42);
+        let d = control_dto(DtoInputs {
+            live: Some(&l),
+            own_pid: Some(7), // claude.cmd: cmd.exe pid != node pid
+            run_state: Some(RunState::Busy),
+            ..inputs(&reg)
+        });
+        assert!(d.can_control);
+        assert_eq!(d.reason, None);
+        // Exited child with another pid: the live one is someone else's.
+        let d = control_dto(DtoInputs {
+            live: Some(&l),
+            own_pid: Some(7),
+            run_state: Some(RunState::Exited {
+                code: Some(0),
+                stderr_tail: String::new(),
+            }),
+            ..inputs(&reg)
+        });
+        assert_eq!(d.reason, Some("liveElsewhere"));
     }
 
     #[test]
