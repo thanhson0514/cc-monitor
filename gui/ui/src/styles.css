@@ -28,8 +28,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .muted { color: var(--muted); }
 .pad { padding: 16px; }
 
-.app { display: grid; grid-template-columns: 300px 1fr; grid-template-rows: 100%; height: 100%; }
-.app.with-sidebar { grid-template-columns: 300px 1fr 360px; }
+.app { --tree-w: 300px; display: grid; grid-template-columns: var(--tree-w) 1fr; grid-template-rows: 100%; height: 100%; }
+.app.with-sidebar { grid-template-columns: var(--tree-w) 1fr 360px; }
+.app.tree-collapsed { --tree-w: 52px; }
 
 /* tree */
 .tree { background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; padding-bottom: 12px; }
@@ -143,17 +144,37 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .wf-view { display: flex; flex-direction: column; gap: 6px; }
 .wf-member { display: flex; gap: 10px; align-items: center; text-align: left; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
 
-/* powerline status bar */
-.statusbar { border-top: 1px solid var(--border); background: #0e0f13; padding: 6px 12px; display: flex; flex-direction: column; gap: 4px; font-family: 'JetBrains Mono', 'Ubuntu Mono', monospace; font-size: 12px; }
-.seg-row { display: flex; align-items: center; flex-wrap: wrap; row-gap: 4px; }
-.seg { color: #111; padding: 2px 16px 2px 14px; margin-right: -6px; clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%); }
-.seg:first-child { clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%); padding-left: 10px; border-radius: 3px 0 0 3px; }
-.seg-blue { background: var(--blue); }
-.seg-gray { background: var(--gray); }
-.seg-purple { background: var(--purple); }
-.seg-yellow { background: var(--amber); }
-.seg-teal { background: var(--teal); }
-.status-extra { margin-left: 18px; color: var(--muted); }
+/* status bar: one compact row of grouped readouts */
+.statusbar { border-top: 1px solid var(--border); background: #0e0f13; padding: 5px 14px; min-height: 30px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 18px; font-family: 'JetBrains Mono', 'Ubuntu Mono', monospace; font-size: 11.5px; color: var(--text); }
+.sb-group { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.sb-right { margin-left: auto; }
+.sb-item { display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; }
+.sb-label { color: var(--muted); }
+.sb-val { color: var(--text); font-variant-numeric: tabular-nums; }
+.sb-chip { padding: 1px 7px; border-radius: 4px; white-space: nowrap; }
+.sb-model { background: #232744; color: var(--accent); }
+.sb-lines { display: inline-flex; gap: 4px; margin-left: 2px; }
+.sb-lines .add { color: var(--green); } .sb-lines .del { color: var(--red); }
+.meter { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.meter-track { width: 54px; height: 5px; border-radius: 3px; background: #23252e; overflow: hidden; }
+.meter-fill { display: block; height: 100%; border-radius: 3px; background: var(--teal); transition: width .3s ease; }
+.meter-mid .meter-fill { background: var(--amber); }
+.meter-high .meter-fill { background: var(--red); }
+.meter-high .sb-val { color: var(--red); }
+.meter-none .sb-val { color: var(--muted); }
+
+/* activity line above the status bar */
+.activity { display: flex; align-items: center; gap: 8px; padding: 6px 20px; border-top: 1px solid var(--border); background: var(--panel); font-size: 12.5px; min-height: 32px; }
+.act-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
+.act-busy .act-dot { background: var(--green); box-shadow: 0 0 0 0 rgba(74, 222, 128, .6); animation: act-pulse 1.4s ease-out infinite; }
+.act-waiting .act-dot { background: var(--amber); }
+.act-busy .act-text { color: var(--green); font-weight: 600; }
+.act-waiting .act-text { color: var(--amber); }
+.act-stopped .act-text { color: var(--muted); }
+.act-detail { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; font-family: 'JetBrains Mono', 'Ubuntu Mono', monospace; font-size: 11.5px; }
+.act-time { margin-left: auto; color: var(--muted); font-family: 'JetBrains Mono', 'Ubuntu Mono', monospace; font-size: 11.5px; font-variant-numeric: tabular-nums; flex: none; }
+@keyframes act-pulse { 0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, .55); } 70% { box-shadow: 0 0 0 7px rgba(74, 222, 128, 0); } 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); } }
+@media (prefers-reduced-motion: reduce) { .act-busy .act-dot { animation: none; } }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #2a2c36; border-radius: 5px; }
@@ -301,7 +322,20 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* brand + tool tags */
 .brand { display: flex; align-items: center; gap: 8px; padding: 14px 14px 4px; font-weight: 700; font-size: 15px; }
-.brand-logo { color: var(--accent); }
+.brand-logo { width: 22px; height: 22px; flex: none; }
+.icon-btn { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: var(--muted); flex: none; }
+.icon-btn:hover { background: var(--panel-2); color: var(--text); }
+.gear + .icon-btn { margin-left: -4px; }
+
+/* collapsed tree rail */
+.tree-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 0; overflow-x: hidden; }
+.tree-rail .brand-logo { width: 26px; height: 26px; margin-bottom: 4px; }
+.rail-sep { width: 24px; border-top: 1px solid var(--border); margin: 4px 0; }
+.rail-item { position: relative; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 8px; background: var(--panel-2); font-weight: 600; font-size: 13px; color: var(--text); flex: none; }
+.rail-item:hover { background: #232744; }
+.rail-item.selected { background: #232744; color: var(--accent); box-shadow: inset 0 0 0 1px #333a66; }
+.rail-dot { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.rail-dot.busy { background: var(--green); }
 .gear { margin-left: auto; font-size: 16px; color: var(--muted); padding: 2px 6px; border-radius: 6px; }
 .gear:hover { background: var(--panel-2); color: var(--text); }
 .tool-tag { font-size: 9.5px; font-weight: 600; padding: 0 5px; border-radius: 4px; flex: none; letter-spacing: .02em; }
