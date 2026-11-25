@@ -33,7 +33,7 @@ pub fn effective(o: &Overlay, r: &Registry) -> Overlay {
     e
 }
 
-fn valid_sid(sid: &str) -> bool {
+pub(crate) fn valid_sid(sid: &str) -> bool {
     !sid.is_empty() && sid.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
@@ -41,7 +41,7 @@ fn read_json<T: serde::de::DeserializeOwned>(p: &Path) -> Option<T> {
     serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok()
 }
 
-fn write_atomic<T: serde::Serialize>(p: &Path, v: &T) -> io::Result<()> {
+pub(crate) fn write_atomic<T: serde::Serialize>(p: &Path, v: &T) -> io::Result<()> {
     let dir = p
         .parent()
         .ok_or_else(|| io::Error::other("no parent dir"))?;

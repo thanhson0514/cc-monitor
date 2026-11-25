@@ -1,6 +1,8 @@
 //! Managed-session control: per-session overlay + ccmon-owned state.
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
+use std::io;
+use std::path::{Path, PathBuf};
 
 pub mod state;
 
@@ -30,4 +32,249 @@ pub struct Registry {
     pub disabled_agents: BTreeSet<String>,
     pub disabled_workflows: BTreeSet<String>,
     pub notes: BTreeMap<String, String>,
+}
+
+/// How to spawn one managed `claude` process.
+#[derive(Clone, PartialEq, Debug)]
+pub struct LaunchSpec {
+    pub program: PathBuf,
+    pub args: Vec<String>,
+    pub cwd: PathBuf,
+    pub settings_file: Option<PathBuf>,
+}
+
+/// Locate the `claude` binary: PATH, `~/.local/bin/claude`, `~/.claude/local/claude`.
+pub fn find_claude() -> Option<PathBuf> {
+    let on_path = std::env::var_os("PATH").and_then(|p| {
+        std::env::split_paths(&p)
+            .map(|d| d.join("claude"))
+            .find(|c| c.is_file())
+    });
+    on_path.or_else(|| {
+        let home = dirs::home_dir()?;
+        [".local/bin/claude", ".claude/local/claude"]
+            .iter()
+            .map(|r| home.join(r))
+            .find(|c| c.is_file())
+    })
+}
+
+/// Translate an overlay into CLI args (verified mapping: docs/architecture/control.md).
+/// Each `--disallowedTools` rule is its own args element. With `sid == None` a
+/// new session is started (its id comes from the first stdout event).
+pub fn build_args(
+    sid: Option<&str>,
+    cwd: &Path,
+    o: &Overlay,
+    state_dir: &Path,
+) -> io::Result<LaunchSpec> {
+    let mut args: Vec<String> = [
+        "-p",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    if let Some(sid) = sid {
+        if !state::valid_sid(sid) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid session id",
+            ));
+        }
+        args.extend(["--resume".into(), sid.into()]);
+    }
+    for (flag, val) in [
+        ("--model", &o.model),
+        ("--effort", &o.effort),
+        ("--permission-mode", &o.permission_mode),
+        ("--agent", &o.main_agent),
+    ] {
+        if let Some(v) = val.as_ref().filter(|v| !v.is_empty()) {
+            args.extend([flag.into(), v.clone()]);
+        }
+    }
+    let mut settings_file = None;
+    if !o.disabled_plugins.is_empty() {
+        let name = match sid {
+            Some(s) => s.to_string(),
+            None => format!("new-{}", chrono::Utc::now().timestamp_millis()),
+        };
+        let path = state_dir
+            .join("launch")
+            .join(format!("{name}.settings.json"));
+        let enabled: BTreeMap<&String, bool> =
+            o.disabled_plugins.iter().map(|p| (p, false)).collect();
+        state::write_atomic(&path, &serde_json::json!({ "enabledPlugins": enabled }))?;
+        args.extend(["--settings".into(), path.to_string_lossy().into_owned()]);
+        settings_file = Some(path);
+    }
+    let mut rules: Vec<String> = Vec::new();
+    rules.extend(o.disabled_skills.iter().map(|s| format!("Skill({s})")));
+    rules.extend(
+        o.disabled_mcp
+            .iter()
+            .map(|s| format!("mcp__{}", crate::catalog::mcp::normalize(s))),
+    );
+    rules.extend(o.disabled_agents.iter().map(|a| format!("Agent({a})")));
+    if o.workflows_off {
+        rules.push("Workflow".into());
+    } else {
+        rules.extend(
+            o.disabled_workflows
+                .iter()
+                .map(|w| format!("Workflow({w})")),
+        );
+    }
+    if !rules.is_empty() {
+        // Variadic flag: keep it last.
+        args.push("--disallowedTools".into());
+        args.extend(rules);
+    }
+    Ok(LaunchSpec {
+        program: find_claude().unwrap_or_else(|| PathBuf::from("claude")),
+        args,
+        cwd: cwd.to_path_buf(),
+        settings_file,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn set(v: &[&str]) -> BTreeSet<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn args_basic_resume() {
+        let d = tempfile::tempdir().unwrap();
+        let o = Overlay {
+            model: Some("haiku".into()),
+            effort: Some("low".into()),
+            permission_mode: Some("plan".into()),
+            main_agent: Some("Explore".into()),
+            ..Default::default()
+        };
+        let s = build_args(Some("abc-123"), Path::new("/w"), &o, d.path()).unwrap();
+        assert_eq!(s.cwd, Path::new("/w"));
+        assert_eq!(
+            s.args,
+            [
+                "-p",
+                "--verbose",
+                "--input-format",
+                "stream-json",
+                "--output-format",
+                "stream-json",
+                "--resume",
+                "abc-123",
+                "--model",
+                "haiku",
+                "--effort",
+                "low",
+                "--permission-mode",
+                "plan",
+                "--agent",
+                "Explore"
+            ]
+        );
+        assert!(s.settings_file.is_none());
+    }
+
+    #[test]
+    fn args_handle_colons_and_spaces() {
+        let d = tempfile::tempdir().unwrap();
+        let o = Overlay {
+            disabled_skills: set(&["superpowers:brainstorming"]),
+            disabled_mcp: set(&["claude.ai Claude Docs", "plugin:gitlab:gitlab"]),
+            disabled_agents: set(&["Explore"]),
+            disabled_workflows: set(&["deep-research"]),
+            ..Default::default()
+        };
+        let s = build_args(Some("s1"), Path::new("/w"), &o, d.path()).unwrap();
+        let i = s
+            .args
+            .iter()
+            .position(|a| a == "--disallowedTools")
+            .unwrap();
+        let mut rules = s.args[i + 1..].to_vec();
+        rules.sort();
+        assert_eq!(
+            rules,
+            [
+                "Agent(Explore)",
+                "Skill(superpowers:brainstorming)",
+                "Workflow(deep-research)",
+                "mcp__claude_ai_Claude_Docs",
+                "mcp__plugin_gitlab_gitlab",
+            ]
+        );
+        assert_eq!(s.args.len(), i + 6);
+    }
+
+    #[test]
+    fn workflows_off_emits_bare_workflow_only() {
+        let d = tempfile::tempdir().unwrap();
+        let o = Overlay {
+            workflows_off: true,
+            disabled_workflows: set(&["x"]),
+            ..Default::default()
+        };
+        let s = build_args(Some("s1"), Path::new("/w"), &o, d.path()).unwrap();
+        assert_eq!(
+            &s.args[s.args.len() - 2..],
+            ["--disallowedTools", "Workflow"]
+        );
+    }
+
+    #[test]
+    fn settings_file_only_when_plugins_disabled() {
+        let d = tempfile::tempdir().unwrap();
+        let none = build_args(Some("s1"), Path::new("/w"), &Overlay::default(), d.path()).unwrap();
+        assert!(none.settings_file.is_none() && !none.args.contains(&"--settings".to_string()));
+        assert!(!d.path().join("launch").exists());
+        assert!(!none.args.contains(&"--disallowedTools".to_string()));
+        let o = Overlay {
+            disabled_plugins: set(&["superpowers@claude-plugins-official"]),
+            ..Default::default()
+        };
+        let s = build_args(Some("s1"), Path::new("/w"), &o, d.path()).unwrap();
+        let f = s.settings_file.unwrap();
+        assert_eq!(f, d.path().join("launch/s1.settings.json"));
+        assert!(s
+            .args
+            .windows(2)
+            .any(|w| w[0] == "--settings" && w[1] == f.to_string_lossy()));
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
+        assert_eq!(
+            v["enabledPlugins"]["superpowers@claude-plugins-official"],
+            false
+        );
+    }
+
+    #[test]
+    fn new_session_has_no_resume() {
+        let d = tempfile::tempdir().unwrap();
+        let o = Overlay {
+            disabled_plugins: set(&["p@m"]),
+            ..Default::default()
+        };
+        let s = build_args(None, Path::new("/w"), &o, d.path()).unwrap();
+        assert!(!s.args.contains(&"--resume".to_string()));
+        let f = s.settings_file.unwrap();
+        assert!(f.file_name().unwrap().to_string_lossy().starts_with("new-"));
+    }
+
+    #[test]
+    fn invalid_sid_rejected() {
+        let d = tempfile::tempdir().unwrap();
+        assert!(build_args(Some("../x"), Path::new("/w"), &Overlay::default(), d.path()).is_err());
+    }
 }
