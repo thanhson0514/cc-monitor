@@ -127,6 +127,7 @@ mod tests {
             claude_home: home,
             claude_json: root.join("c.json"),
             cwd: Some(root.join("proj")),
+            registry: Default::default(),
         };
         let caps = AgentProvider.scan(&c);
         let get = |id: &str| {

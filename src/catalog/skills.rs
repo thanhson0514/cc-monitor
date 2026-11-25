@@ -119,6 +119,7 @@ mod tests {
             claude_home: home,
             claude_json: root.join("home/.claude.json"),
             cwd: Some(root.join("proj")),
+            registry: Default::default(),
         }
     }
 

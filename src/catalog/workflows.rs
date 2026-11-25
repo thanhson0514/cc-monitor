@@ -107,6 +107,7 @@ mod tests {
             claude_home: home,
             claude_json: root.join("c.json"),
             cwd: Some(root.join("proj")),
+            registry: Default::default(),
         };
         let caps = WorkflowProvider.scan(&c);
         let get = |id: &str| {

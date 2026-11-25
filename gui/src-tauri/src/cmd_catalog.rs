@@ -80,6 +80,7 @@ fn scan_ctx(cwd: Option<&str>) -> ScanCtx {
         claude_home,
         claude_json,
         cwd: cwd.filter(|c| !c.is_empty()).map(PathBuf::from),
+        registry: cc_monitor::control::state::load_registry(),
     }
 }
 

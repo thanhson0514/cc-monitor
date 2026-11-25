@@ -174,6 +174,7 @@ mod tests {
             claude_home: home,
             claude_json: root.join("home/.claude.json"),
             cwd: Some(cwd),
+            registry: Default::default(),
         }
     }
 
@@ -232,6 +233,7 @@ mod tests {
             claude_home: t.path().join("h"),
             claude_json: t.path().join("nope.json"),
             cwd: Some(t.path().join("x")),
+            registry: Default::default(),
         };
         assert!(McpProvider.scan(&c).is_empty());
         write(&c.claude_json, "{not json");

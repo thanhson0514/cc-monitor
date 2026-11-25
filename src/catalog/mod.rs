@@ -6,6 +6,7 @@
 
 pub mod agents;
 pub mod frontmatter;
+pub mod history;
 pub mod mcp;
 pub mod plugins;
 pub mod skills;
@@ -59,6 +60,9 @@ pub struct ScanCtx {
     pub claude_home: PathBuf,
     pub claude_json: PathBuf,
     pub cwd: Option<PathBuf>,
+    /// ccmon registry (disabled agents/workflows). Passed in so providers stay
+    /// free of IO beyond `ScanCtx`; [`Catalog::scan`] applies it after scanning.
+    pub registry: crate::control::Registry,
 }
 
 pub trait Provider {
@@ -74,7 +78,19 @@ pub struct Catalog {
 
 impl Catalog {
     pub fn scan(ctx: &ScanCtx) -> Catalog {
-        let items = providers().iter().flat_map(|p| p.scan(ctx)).collect();
+        let mut items: Vec<Capability> = providers().iter().flat_map(|p| p.scan(ctx)).collect();
+        // Post-scan: disabling keeps files and history; it only flips this flag.
+        for c in &mut items {
+            match c.kind {
+                CapKind::Agent => {
+                    c.enabled_globally = !ctx.registry.disabled_agents.contains(&c.id)
+                }
+                CapKind::Workflow => {
+                    c.enabled_globally = !ctx.registry.disabled_workflows.contains(&c.id)
+                }
+                _ => {}
+            }
+        }
         Catalog { items }
     }
 
@@ -98,6 +114,34 @@ pub fn providers() -> Vec<Box<dyn Provider>> {
 pub(crate) fn write(p: &std::path::Path, s: &str) {
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
     std::fs::write(p, s).unwrap();
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::*;
+
+    #[test]
+    fn registry_drives_enabled_globally_for_agents_and_workflows() {
+        let t = tempfile::tempdir().unwrap();
+        let home = t.path().join("home/.claude");
+        write(&home.join("agents/a.md"), "---\nname: a\n---\n");
+        write(&home.join("agents/b.md"), "---\nname: b\n---\n");
+        write(&home.join("workflows/w.js"), "// w");
+        let mut reg = crate::control::Registry::default();
+        reg.disabled_agents.insert("a".into());
+        reg.disabled_workflows.insert("w".into());
+        let ctx = ScanCtx {
+            claude_home: home,
+            claude_json: t.path().join("c.json"),
+            cwd: None,
+            registry: reg,
+        };
+        let cat = Catalog::scan(&ctx);
+        let en = |k, id: &str| cat.of(k).find(|c| c.id == id).unwrap().enabled_globally;
+        assert!(!en(CapKind::Agent, "a"));
+        assert!(en(CapKind::Agent, "b"));
+        assert!(!en(CapKind::Workflow, "w"));
+    }
 }
 
 #[cfg(test)]
