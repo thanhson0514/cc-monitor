@@ -6,12 +6,9 @@
 
 **Xem AI coding agent đang làm gì — theo thời gian thực.**
 
-Ứng dụng desktop miễn phí, mã nguồn mở, biến các phiên **Claude Code** và **Codex** thành một màn hình
-gọn gàng, cập nhật trực tiếp: từng prompt, lệnh, file đã sửa, subagent và workflow, kèm diff hai cột
+Ứng dụng desktop miễn phí, mã nguồn mở, biến các phiên **Claude Code** thành một màn hình gọn
+gàng, cập nhật trực tiếp: từng prompt, lệnh, file đã sửa, subagent và workflow, kèm diff hai cột
 và hạn mức gói. Chạy cục bộ, chỉ đọc.
-
-> **Lưu ý:** từ v0.2.0 ccmon tập trung vào **Claude Code**; tạm thời tắt theo dõi Codex.
-> Các phần nhắc tới Codex bên dưới mô tả bộ đọc vẫn còn trong code nhưng chưa bật.
 
 [**Tải về**](https://github.com/thanhson0514/cc-monitor/releases/latest) ·
 [Website](https://thanhson0514.github.io/cc-monitor) ·
@@ -33,18 +30,19 @@ và hạn mức gói. Chạy cục bộ, chỉ đọc.
 - **File, ảnh & log:** ảnh bạn dán vào, ảnh chụp agent tạo, file đã đọc/ghi, thư mục nháp, log lệnh ✓/✗;
   xem trước ảnh/văn bản và Markdown đã định dạng.
 - **Hạn mức gói:** model, context đã dùng, hạn mức 5 giờ và tuần, effort, nhánh git, số dòng thay đổi.
-- **Lịch sử phiên:** phiên đang mở (đang làm/chờ), phiên vừa đóng, và các phiên cũ theo project.
+- **Lịch sử phiên:** phiên đang mở (đang làm/chờ), phiên vừa đóng, và các phiên cũ theo project. Cây
+  phiên thu gọn được thành một dải hẹp (`Ctrl+B`).
+- **Đang làm gì:** một dòng trực tiếp dưới timeline cho biết agent đang chạy tool nào, đang chờ agent con,
+  đang suy nghĩ, đang trả lời hay đang chờ bạn, kèm thời gian đã trôi.
 - **Cục bộ & chỉ đọc:** không tài khoản, không gọi mạng, không telemetry.
 
-## Công cụ hỗ trợ
+## Dữ liệu đọc từ đâu
 
-| Công cụ | Đọc từ | Hạn mức gói |
+| Đọc từ | Subagent | Hạn mức gói |
 |---|---|---|
-| **Claude Code** | `~/.claude/projects/**/*.jsonl` | qua tuỳ chọn bọc status line |
-| **Codex** | `~/.codex/sessions/**/rollout-*.jsonl` | có sẵn, không cần cấu hình |
+| `~/.claude/projects/**/*.jsonl` | có, cả subagent và agent của workflow | qua tuỳ chọn bọc status line |
 
-Lần mở đầu tiên, ccmon tự dò công cụ đã cài và cho bạn chọn **Claude Code**, **Codex** hoặc cả hai.
-Đổi lại ở **⚙ Cài đặt**.
+Lần mở đầu tiên, ccmon tự tìm dữ liệu Claude Code và bắt đầu theo dõi; tuỳ chọn nằm ở **⚙ Cài đặt**.
 
 ## Cài đặt
 
@@ -85,4 +83,4 @@ và mở pull request — xem [CONTRIBUTING.md](CONTRIBUTING.md).
 
 [MIT](LICENSE) © 2026 Lê Thanh Sơn — tự do sử dụng, sửa đổi, phân phối, kể cả thương mại.
 
-Claude Code là thương hiệu của Anthropic. Codex là thương hiệu của OpenAI. ccmon không liên kết với hai công ty.
+Claude Code là thương hiệu của Anthropic. ccmon không liên kết với Anthropic.
