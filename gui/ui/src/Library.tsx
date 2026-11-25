@@ -11,7 +11,7 @@ const TOGGLE_TIP = 'Chỉ áp dụng cho session chạy từ ccmon';
 
 function scopeLabel(s: CapScope): { text: string; cls: string; title: string } {
     if (typeof s === 'string') {
-        const t = { user: 'Người dùng', project: 'Dự án', builtIn: 'Có sẵn', managed: 'Quản lý' }[s];
+        const t = { user: 'Người dùng', project: 'Dự án', builtIn: 'Có sẵn', managed: 'Của session' }[s];
         return { text: t, cls: `scope-${s}`, title: t };
     }
     return { text: s.plugin.split('@')[0], cls: 'scope-plugin', title: `Plugin ${s.plugin}` };
@@ -29,19 +29,13 @@ export function Library({ sid, sessionLabel }: { sid: string | null; sessionLabe
     const [filter, setFilter] = useState('');
     const [caps, setCaps] = useState<Capability[] | null>(null);
     const [usage, setUsage] = useState<Usage[]>([]);
-    const [cwd, setCwd] = useState<string | null>(null);
 
     useEffect(() => {
-        api.catalog(cwd).then(setCaps);
-    }, [cwd]);
-
-    // Catalog is per project: follow the selected session's cwd via get_session_cwd.
-    useEffect(() => {
-        if (!sid) {
-            setCwd(null);
-            return;
-        }
-        api.sessionCwd(sid).then(setCwd);
+        let ignore = false;
+        api.catalog(sid).then((c) => !ignore && setCaps(c));
+        return () => {
+            ignore = true;
+        };
     }, [sid]);
 
     useEffect(() => {
@@ -49,10 +43,14 @@ export function Library({ sid, sessionLabel }: { sid: string | null; sessionLabe
             setUsage([]);
             return;
         }
-        const load = () => api.sessionUsage(sid).then(setUsage);
+        let ignore = false;
+        const load = () => api.sessionUsage(sid).then((u) => !ignore && setUsage(u));
         load();
         const t = setInterval(load, 5000);
-        return () => clearInterval(t);
+        return () => {
+            ignore = true;
+            clearInterval(t);
+        };
     }, [sid]);
 
     const usageOf = useMemo(() => {

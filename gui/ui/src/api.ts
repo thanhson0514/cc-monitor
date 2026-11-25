@@ -234,8 +234,7 @@ export interface Usage {
 }
 
 export const api = {
-    catalog: (cwd: string | null) => invoke<Capability[]>('get_catalog', { cwd }),
-    sessionCwd: (sid: string) => invoke<string | null>('get_session_cwd', { sid }),
+    catalog: (sid: string | null) => invoke<Capability[]>('get_catalog', { sid }),
     sessionUsage: (sid: string) => invoke<Usage[]>('get_session_usage', { sid }),
     setup: () => invoke<SetupInfo>('get_setup'),
     saveSetup: (claude: boolean, codex: boolean, statusline: boolean) =>

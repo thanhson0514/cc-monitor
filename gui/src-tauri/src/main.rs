@@ -929,8 +929,7 @@ fn main() {
             preview_file,
             tail_task_output,
             cmd_catalog::get_catalog,
-            cmd_catalog::get_session_usage,
-            cmd_catalog::get_session_cwd
+            cmd_catalog::get_session_usage
         ])
         .run(tauri::generate_context!())
         .expect("không khởi động được ccmon GUI");

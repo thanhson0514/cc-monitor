@@ -1,6 +1,6 @@
 //! Tauri commands for the capability catalog (Library page).
 
-use cc_monitor::catalog::usage::{session_usage, UseState};
+use cc_monitor::catalog::usage::{inventory_only, session_usage, UseState};
 use cc_monitor::catalog::{CapKind, Capability, Catalog, Scope, ScanCtx};
 use cc_monitor::platform;
 use cc_monitor::thread::Thread;
@@ -90,16 +90,38 @@ fn catalog_for(cwd: Option<&str>) -> Catalog {
     cat
 }
 
-#[tauri::command]
-pub fn get_catalog(cwd: Option<String>) -> Vec<CapabilityDto> {
-    catalog_for(cwd.as_deref()).items.iter().map(CapabilityDto::from).collect()
+/// Catalog entries for the UI: everything on disk (user-level, plus the
+/// session's project when known) and, given the session's threads, the
+/// capabilities it announced or used that have no file on disk.
+pub fn listing(catalog: &Catalog, threads: &[&Thread]) -> Vec<CapabilityDto> {
+    let extra = inventory_only(threads, catalog);
+    catalog.items.iter().chain(extra.iter()).map(CapabilityDto::from).collect()
 }
 
-/// Working directory of a session (the Library scans project-level items there).
-#[tauri::command]
-pub fn get_session_cwd(state: State<Shared>, sid: String) -> Option<String> {
+/// Session cwd taken from the store only (never from the webview), so project
+/// files are read only under a session's own working directory.
+fn session_cwd(state: &Shared, sid: &str) -> Option<String> {
     let store = state.store.lock().unwrap();
-    store.sessions.get(&sid)?.main.cwd().map(str::to_string)
+    store.sessions.get(sid)?.main.cwd().map(str::to_string)
+}
+
+/// Main thread plus every subagent and workflow-agent thread of a session
+/// (workflow agents live in `Session::agents` with a `run_id`).
+fn session_threads<'a>(store: &'a cc_monitor::store::Store, sid: &str) -> Vec<&'a Thread> {
+    let Some(sess) = store.sessions.get(sid) else { return Vec::new() };
+    let mut threads: Vec<&Thread> = vec![&sess.main];
+    threads.extend(sess.agents.values().map(|a| &a.thread));
+    threads
+}
+
+/// `sid = None` (or unknown): user-level scan only.
+#[tauri::command]
+pub fn get_catalog(state: State<Shared>, sid: Option<String>) -> Vec<CapabilityDto> {
+    let cwd = sid.as_deref().and_then(|s| session_cwd(&state, s));
+    let catalog = catalog_for(cwd.as_deref());
+    let store = state.store.lock().unwrap();
+    let threads = sid.as_deref().map(|s| session_threads(&store, s)).unwrap_or_default();
+    listing(&catalog, &threads)
 }
 
 pub fn usage_dtos(threads: &[&Thread], catalog: &Catalog) -> Vec<UsageDto> {
@@ -112,19 +134,14 @@ pub fn usage_dtos(threads: &[&Thread], catalog: &Catalog) -> Vec<UsageDto> {
 
 #[tauri::command]
 pub fn get_session_usage(state: State<Shared>, sid: String) -> Vec<UsageDto> {
-    let cwd = {
-        let store = state.store.lock().unwrap();
-        match store.sessions.get(&sid) {
-            Some(s) => s.main.cwd().map(str::to_string),
-            None => return Vec::new(),
-        }
-    };
+    let cwd = session_cwd(&state, &sid);
     // Scan outside the store lock (disk I/O).
     let catalog = catalog_for(cwd.as_deref());
     let store = state.store.lock().unwrap();
-    let Some(sess) = store.sessions.get(&sid) else { return Vec::new() };
-    let mut threads: Vec<&Thread> = vec![&sess.main];
-    threads.extend(sess.agents.values().map(|a| &a.thread));
+    let threads = session_threads(&store, &sid);
+    if threads.is_empty() {
+        return Vec::new();
+    }
     usage_dtos(&threads, &catalog)
 }
 
@@ -168,5 +185,40 @@ mod tests {
         );
         assert_eq!(u(UseState::Available)["state"], json!("available"));
         assert_eq!(u(UseState::Unavailable)["count"], json!(0));
+    }
+
+    fn thread(lines: &[&str]) -> Thread {
+        let mut t = Thread::new();
+        for l in lines {
+            t.push(cc_monitor::event::parse_line(l).expect(l));
+        }
+        t
+    }
+
+    #[test]
+    fn scan_ctx_without_cwd_is_user_only() {
+        assert!(scan_ctx(None).cwd.is_none());
+        assert!(scan_ctx(Some("")).cwd.is_none());
+        assert_eq!(scan_ctx(Some("/p")).cwd, Some(PathBuf::from("/p")));
+    }
+
+    #[test]
+    fn listing_includes_announced_mcp_not_on_disk() {
+        let inv = r#"{"type":"attachment","uuid":"i","attachment":{"type":"mcp_instructions_delta","addedNames":["claude.ai Docs"]}}"#;
+        let t = thread(&[inv]);
+        let catalog = Catalog::default();
+        let items = listing(&catalog, &[&t]);
+        let c = items.iter().find(|c| c.id == "claude.ai Docs").expect("announced mcp listed");
+        assert_eq!(serde_json::to_value(c).unwrap()["scope"], json!("managed"));
+        assert_eq!(c.path, None);
+        let u = usage_dtos(&[&t], &catalog);
+        assert_eq!(u.iter().find(|u| u.id == "claude.ai Docs").unwrap().state, "available");
+
+        let call = r#"{"type":"assistant","uuid":"u","timestamp":"2026-11-25T00:00:01.000Z","message":{"id":"m","role":"assistant","content":[{"type":"tool_use","id":"t","name":"mcp__claude_ai_Docs__read","input":{}}]}}"#;
+        let t2 = thread(&[inv, call]);
+        let u = usage_dtos(&[&t2], &catalog);
+        let e = u.iter().find(|u| u.id == "claude.ai Docs").unwrap();
+        assert_eq!((e.state, e.count), ("used", 1));
+        assert!(listing(&catalog, &[]).is_empty());
     }
 }
