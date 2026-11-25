@@ -189,20 +189,40 @@ fn read_run_file(sdir: &Path, run: &str) -> RunFile {
         .unwrap_or_default()
 }
 
-/// Fallback name: the main transcript line carrying `toolUseResult.runId`.
-fn name_from_transcript(proj_dir: &Path, sid: &str, run: &str) -> Option<String> {
-    let r = BufReader::new(std::fs::File::open(proj_dir.join(format!("{sid}.jsonl"))).ok()?);
-    let needle = format!("\"runId\":\"{run}\"");
-    for line in r.lines().map_while(Result::ok) {
-        if !line.contains(&needle) || !line.contains("workflowName") {
+/// Cap on bytes read from one main transcript while looking for workflow names.
+const SCAN_CAP: u64 = 32 * 1024 * 1024;
+/// A "running" run untouched for this long is reported as `unknown`.
+const STALE_MS: i64 = 10 * 60_000;
+
+/// Fallback names: ONE bounded scan of the main transcript per session,
+/// collecting every `toolUseResult.{runId,workflowName}` pair. Lines are
+/// pre-filtered with a substring test; non-UTF8 and unparsable lines are skipped.
+fn names_from_transcript(proj_dir: &Path, sid: &str) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    let Ok(f) = std::fs::File::open(proj_dir.join(format!("{sid}.jsonl"))) else {
+        return map;
+    };
+    let mut r = BufReader::new(f.take(SCAN_CAP));
+    let mut buf = Vec::new();
+    loop {
+        buf.clear();
+        match r.read_until(b'\n', &mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(_) => {}
+        }
+        let line = String::from_utf8_lossy(&buf);
+        if !line.contains("\"runId\"") || !line.contains("workflowName") {
             continue;
         }
-        let v: serde_json::Value = serde_json::from_str(&line).ok()?;
-        if let Some(n) = v["toolUseResult"]["workflowName"].as_str() {
-            return Some(n.to_string());
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        let res = &v["toolUseResult"];
+        if let (Some(id), Some(n)) = (res["runId"].as_str(), res["workflowName"].as_str()) {
+            map.entry(id.to_string()).or_insert_with(|| n.to_string());
         }
     }
-    None
+    map
 }
 
 pub fn workflow_history(projects_root: &Path, workflow: &str, since_days: u32) -> Vec<RunRecord> {
@@ -210,6 +230,7 @@ pub fn workflow_history(projects_root: &Path, workflow: &str, since_days: u32) -
     let mut out = vec![];
     for (project, sid, sdir) in sessions(projects_root) {
         let proj_dir = projects_root.join(&project);
+        let mut transcript_names = None; // scanned lazily, at most once per session
         for run in dirs_in(&sdir.join("subagents").join("workflows")) {
             let run_id = name_of(&run);
             let files = recent_agent_files(&run.path(), cutoff);
@@ -217,24 +238,31 @@ pub fn workflow_history(projects_root: &Path, workflow: &str, since_days: u32) -
                 continue;
             }
             let rf = read_run_file(&sdir, &run_id);
-            let name = rf
-                .workflow_name
-                .clone()
-                .or_else(|| name_from_transcript(&proj_dir, &sid, &run_id));
+            let name = rf.workflow_name.clone().or_else(|| {
+                transcript_names
+                    .get_or_insert_with(|| names_from_transcript(&proj_dir, &sid))
+                    .get(&run_id)
+                    .cloned()
+            });
             if name.as_deref() != Some(workflow) {
                 continue;
             }
             let started = files.iter().filter_map(|(_, p, _)| first_ts(p)).min();
             let newest = files.iter().map(|f| f.2).max().unwrap_or(0);
-            let status = match rf.status {
+            let run_json = sdir.join("workflows").join(format!("{run_id}.json"));
+            let latest = newest.max(mtime_ms(&run_json).unwrap_or(0));
+            let mut status = match rf.status {
                 Some(s) if !s.is_empty() => s,
                 _ => status_of(newest).into(),
             };
-            let ended = if status == "running" {
-                None
-            } else {
-                files.iter().filter_map(|(_, p, _)| last_ts(p)).max()
-            };
+            let mut ended = None;
+            if status == "running" && now_ms() - latest >= STALE_MS {
+                // crashed/stale run: it will never report completion
+                status = "unknown".into();
+                ended = Some(latest);
+            } else if status != "running" {
+                ended = files.iter().filter_map(|(_, p, _)| last_ts(p)).max();
+            }
             out.push(RunRecord {
                 session_id: sid.clone(),
                 project: project.clone(),
@@ -460,5 +488,78 @@ mod tests {
         assert_eq!(h[1].status, "completed");
         assert_eq!(workflow_history(r, "other", 0).len(), 1);
         assert!(workflow_history(r, "nope", 0).is_empty());
+    }
+
+    #[test]
+    fn one_transcript_resolves_many_runs_tolerating_bad_lines() {
+        let t = tempfile::tempdir().unwrap();
+        let r = t.path();
+        let wf = "p/s/subagents/workflows";
+        for run in ["wf_a", "wf_b"] {
+            agent(
+                r,
+                &format!("{wf}/{run}"),
+                "x",
+                "",
+                "2026-11-25T07:00:00.000Z",
+                "2026-11-25T07:01:00.000Z",
+            );
+        }
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"{\"runId\": broken workflowName\n");
+        bytes.extend_from_slice(&[0xff, 0xfe, b'\n']);
+        bytes.extend_from_slice(br#"{"toolUseResult":{"runId":"wf_a","workflowName":"review"}}"#);
+        bytes.push(b'\n');
+        bytes.extend_from_slice(br#"{"toolUseResult":{"runId":"wf_b","workflowName":"review"}}"#);
+        bytes.push(b'\n');
+        std::fs::write(r.join("p/s.jsonl"), bytes).unwrap();
+        assert_eq!(workflow_history(r, "review", 0).len(), 2);
+    }
+
+    #[test]
+    fn stale_running_workflow_becomes_unknown() {
+        let t = tempfile::tempdir().unwrap();
+        let r = t.path();
+        let wf = "p/s/subagents/workflows";
+        agent(
+            r,
+            &format!("{wf}/wf_s"),
+            "x",
+            "",
+            "2026-11-25T07:00:00.000Z",
+            "2026-11-25T07:01:00.000Z",
+        );
+        agent(
+            r,
+            &format!("{wf}/wf_f"),
+            "x",
+            "",
+            "2026-11-25T07:00:00.000Z",
+            "2026-11-25T07:01:00.000Z",
+        );
+        let j = r#"{"workflowName":"w","status":"running"}"#;
+        write(&r.join("p/s/workflows/wf_s.json"), j);
+        write(&r.join("p/s/workflows/wf_f.json"), j);
+        let old = SystemTime::now() - Duration::from_secs(3600);
+        std::fs::File::options()
+            .write(true)
+            .open(r.join("p/s/workflows/wf_s.json"))
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(r.join(format!("{wf}/wf_s/agent-x.jsonl")))
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        // wf_f: agent file is 1 day old but the run json is fresh => still running
+        let h = workflow_history(r, "w", 0);
+        let s = h.iter().find(|x| x.node_key == "w:s:wf_s").unwrap();
+        assert_eq!(s.status, "unknown");
+        assert!(s.ended.is_some());
+        let f = h.iter().find(|x| x.node_key == "w:s:wf_f").unwrap();
+        assert_eq!(f.status, "running");
+        assert_eq!(f.ended, None);
     }
 }
