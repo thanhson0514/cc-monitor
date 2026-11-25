@@ -151,6 +151,10 @@ impl Store {
             }
             Msg::Live(map) => {
                 for (sid, s) in self.sessions.iter_mut() {
+                    // Live -> not live: the session closed.
+                    if s.live.is_some() && !map.contains_key(sid) {
+                        s.main.finalize_bg_unknown();
+                    }
                     s.live = map.get(sid).cloned();
                 }
                 self.live = map;

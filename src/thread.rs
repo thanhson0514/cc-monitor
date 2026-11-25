@@ -1,5 +1,6 @@
 //! One conversation thread (main session, subagent or workflow agent) built from events.
 
+use crate::bgtask::{BgKind, BgState, BgTask, Registry};
 use crate::event::{Block, Event, Kind, RateInfo, Usage};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -64,6 +65,12 @@ pub struct ToolItem {
     pub result: String,
     pub persisted: Option<PathBuf>,
     pub link: Option<ThreadLink>,
+    /// Background task this tool launched, or targets (`TaskOutput`, `TaskStop`, ...).
+    pub bg: Option<BgTask>,
+    /// `Yield` only: background tasks pending when it started.
+    pub waits: Vec<BgTask>,
+    /// `Yield` only: task id of the first notice after it started.
+    pub woke_by: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,6 +91,10 @@ pub struct Thread {
     tool_names: HashMap<String, String>,
     workflow_names: HashMap<String, String>,
     link_to_tool: HashMap<ThreadLink, String>,
+    tool_inputs: HashMap<String, (Value, Option<i64>)>,
+    bg: Registry,
+    /// Task notices in arrival order: (task id, ts).
+    notices: Vec<(String, Option<i64>)>,
     items: Vec<Item>,
     dirty: bool,
     last_usage: Option<Usage>,
@@ -173,6 +184,10 @@ impl Thread {
                 return;
             }
             Kind::System { subtype, .. } if subtype == "compact_boundary" => self.compactions += 1,
+            Kind::TaskNotice(n) => {
+                self.bg.notice(n, ev.ts);
+                self.notices.push((n.task_id.clone(), ev.ts));
+            }
             Kind::Meta => {
                 if let Some(u) = ev.usage.filter(|u| u.context() > 0) {
                     self.last_usage = Some(u);
@@ -213,6 +228,7 @@ impl Thread {
                 Block::ToolUse { id, name, input } => {
                     self.pending.insert(id.clone());
                     self.tool_names.insert(id.clone(), name.clone());
+                    self.tool_inputs.insert(id.clone(), (input.clone(), ev.ts));
                     if name == "Workflow" {
                         if let Some(n) = workflow_meta_name(input) {
                             self.workflow_names.insert(id.clone(), n);
@@ -238,6 +254,7 @@ impl Thread {
                             self.workflow_names.insert(tool_use_id.clone(), n.clone());
                         }
                     }
+                    self.launch_bg(tool_use_id, ev.bg_task_id.as_deref(), ev.link.as_ref());
                     self.results.insert(
                         tool_use_id.clone(),
                         ResultInfo {
@@ -326,6 +343,21 @@ impl Thread {
                     }
                     continue;
                 }
+                Kind::TaskNotice(n) => {
+                    let known = self.bg.get(&n.task_id).is_some()
+                        || n.tool_use_id
+                            .as_deref()
+                            .is_some_and(|u| self.bg.by_tool_use(u).is_some());
+                    if !known {
+                        let text = if n.summary.is_empty() {
+                            format!("task {} {}", n.task_id, n.status)
+                        } else {
+                            n.summary.clone()
+                        };
+                        items.push(Item::System { ts: ev.ts, text });
+                    }
+                    continue;
+                }
                 Kind::User => {
                     if let Some(p) = &ev.prompt {
                         if ev.is_meta || p.starts_with('<') {
@@ -390,6 +422,21 @@ impl Thread {
                             result: r.map(|r| r.content.clone()).unwrap_or_default(),
                             persisted: r.and_then(|r| persisted_path(&r.content)),
                             link: r.and_then(|r| r.link.clone()),
+                            bg: self.bg_for_tool(id, name, input),
+                            waits: match (name.as_str(), ev.ts) {
+                                ("Yield", Some(ts)) => {
+                                    self.bg.pending_at(ts).into_iter().cloned().collect()
+                                }
+                                _ => Vec::new(),
+                            },
+                            woke_by: match (name.as_str(), ev.ts) {
+                                ("Yield", Some(ts)) => self
+                                    .notices
+                                    .iter()
+                                    .find(|(_, t)| t.is_some_and(|t| t > ts))
+                                    .map(|(id, _)| id.clone()),
+                                _ => None,
+                            },
                         }))
                     }
                     _ => {}
@@ -397,6 +444,91 @@ impl Thread {
             }
         }
         self.items = items;
+    }
+
+    /// Register a background task started by the tool call `tool_use_id`, if it started one.
+    fn launch_bg(
+        &mut self,
+        tool_use_id: &str,
+        bg_task_id: Option<&str>,
+        link: Option<&crate::event::ToolLinkInfo>,
+    ) {
+        let (Some(name), Some((input, started))) = (
+            self.tool_names.get(tool_use_id),
+            self.tool_inputs.get(tool_use_id),
+        ) else {
+            return;
+        };
+        let s = |k: &str| {
+            input
+                .get(k)
+                .and_then(Value::as_str)
+                .filter(|v| !v.is_empty())
+        };
+        let (id, kind, label) = match name.as_str() {
+            "Bash" => {
+                let Some(id) = bg_task_id else { return };
+                let label = s("description")
+                    .or_else(|| s("command").and_then(|c| c.lines().next()))
+                    .unwrap_or(id);
+                (id.to_string(), BgKind::Shell, label.to_string())
+            }
+            "Monitor" => (
+                bg_task_id.unwrap_or(tool_use_id).to_string(),
+                BgKind::Monitor,
+                s("description").unwrap_or("Monitor").to_string(),
+            ),
+            "Agent" => {
+                let Some(l) = link.filter(|l| l.status.as_deref() == Some("async_launched")) else {
+                    return;
+                };
+                let Some(a) = &l.agent_id else { return };
+                let label = s("description").or(s("subagent_type")).unwrap_or(a);
+                (a.clone(), BgKind::Agent, label.to_string())
+            }
+            "Workflow" => {
+                let Some(run) = link.and_then(|l| l.run_id.as_ref()) else {
+                    return;
+                };
+                let label = link
+                    .and_then(|l| l.workflow_name.clone())
+                    .or_else(|| self.workflow_names.get(tool_use_id).cloned())
+                    .unwrap_or_else(|| run.clone());
+                (run.clone(), BgKind::Workflow, label)
+            }
+            _ => return,
+        };
+        let started = *started;
+        self.bg.launch(BgTask {
+            id,
+            kind,
+            label,
+            tool_use_id: tool_use_id.to_string(),
+            output_file: None,
+            state: BgState::Running,
+            started,
+            ended: None,
+            summary: None,
+        });
+    }
+
+    fn bg_for_tool(&self, id: &str, name: &str, input: &Value) -> Option<BgTask> {
+        if let Some(t) = self.bg.by_tool_use(id) {
+            return Some(t.clone());
+        }
+        if !matches!(name, "TaskOutput" | "TaskStop" | "BashOutput" | "KillShell") {
+            return None;
+        }
+        ["task_id", "shell_id", "bash_id"]
+            .iter()
+            .filter_map(|k| input.get(*k).and_then(Value::as_str))
+            .find_map(|t| self.bg.get(t).cloned())
+    }
+
+    /// The session closed: background tasks without a notice have an unknown outcome.
+    pub fn finalize_bg_unknown(&mut self) {
+        self.bg.finalize_unknown();
+        self.dirty = true;
     }
 
     fn push_user_file(&mut self, ts: Option<i64>, path: String, kind: UserFileKind) {
@@ -712,6 +844,99 @@ mod tests {
         assert!(
             matches!(&items[1], Item::Tool(ToolItem { link: Some(ThreadLink::Workflow(w)), summary, .. }) if w == "wf_1" && summary == "workflow review-x")
         );
+    }
+
+    const NOTICE_A: &str = "<task-notification>\\n<task-id>bgA</task-id>\\n<tool-use-id>t1</tool-use-id>\\n<status>completed</status>\\n<summary>Background command completed (exit code 0)</summary>\\n</task-notification>";
+
+    fn bg_lines() -> Vec<String> {
+        vec![
+            r#"{"type":"assistant","uuid":"A","timestamp":"2026-11-25T00:00:00.050Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"sleep 9\nx","description":"Sleeper","run_in_background":true}},{"type":"tool_use","id":"t2","name":"Agent","input":{"description":"Audit","subagent_type":"Explore","run_in_background":true}}]}}"#.into(),
+            r#"{"type":"user","uuid":"B","parentUuid":"A","timestamp":"2026-11-25T00:00:00.100Z","toolUseResult":{"backgroundTaskId":"bgA"},"message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"running"}]}}"#.into(),
+            r#"{"type":"user","uuid":"C","parentUuid":"B","timestamp":"2026-11-25T00:00:00.110Z","toolUseResult":{"agentId":"ag1","status":"async_launched"},"message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"ok"}]}}"#.into(),
+            r#"{"type":"assistant","uuid":"D","parentUuid":"C","timestamp":"2026-11-25T00:00:00.120Z","message":{"content":[{"type":"tool_use","id":"t3","name":"Yield","input":{}}]}}"#.into(),
+        ]
+    }
+
+    fn notice_line(uuid: &str, parent: &str, ts: &str, body: &str) -> String {
+        format!(
+            r#"{{"type":"attachment","uuid":"{uuid}","parentUuid":"{parent}","timestamp":"{ts}","attachment":{{"type":"queued_command","prompt":"{body}"}}}}"#
+        )
+    }
+
+    fn tool<'a>(items: &'a [Item], id: &str) -> &'a ToolItem {
+        items
+            .iter()
+            .find_map(|i| match i {
+                Item::Tool(t) if t.id == id => Some(t),
+                _ => None,
+            })
+            .unwrap()
+    }
+
+    fn thread_from(lines: &[String]) -> Thread {
+        let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+        thread(&refs)
+    }
+
+    #[test]
+    fn yield_waits_on_agents_and_shells() {
+        let mut lines = bg_lines();
+        lines.push(notice_line("E", "D", "2026-11-25T00:00:00.130Z", NOTICE_A));
+        let mut t = thread_from(&lines);
+        let items = content(&mut t);
+        let y = tool(&items, "t3");
+        let ids: Vec<_> = y.waits.iter().map(|w| w.id.as_str()).collect();
+        assert_eq!(ids, vec!["bgA", "ag1"]);
+        assert_eq!(y.woke_by.as_deref(), Some("bgA"));
+        let b = tool(&items, "t1").bg.as_ref().unwrap();
+        assert_eq!(b.state, BgState::Completed);
+        assert_eq!(b.label, "Sleeper");
+        assert!(b.summary.as_deref().unwrap().contains("completed"));
+        let a = tool(&items, "t2").bg.as_ref().unwrap();
+        assert_eq!((a.kind, a.state), (BgKind::Agent, BgState::Running));
+        assert_eq!(a.label, "Audit");
+    }
+
+    #[test]
+    fn bg_task_without_notice_is_unknown_after_session_end() {
+        let mut t = thread_from(&bg_lines());
+        assert_eq!(
+            tool(&content(&mut t), "t1").bg.as_ref().unwrap().state,
+            BgState::Running
+        );
+        t.finalize_bg_unknown();
+        let items = content(&mut t);
+        assert_eq!(
+            tool(&items, "t1").bg.as_ref().unwrap().state,
+            BgState::Unknown
+        );
+    }
+
+    #[test]
+    fn task_output_links_to_target_task() {
+        let mut lines = bg_lines();
+        lines.push(r#"{"type":"assistant","uuid":"F","parentUuid":"D","message":{"content":[{"type":"tool_use","id":"t4","name":"TaskOutput","input":{"task_id":"bgA"}}]}}"#.into());
+        let mut t = thread_from(&lines);
+        let items = content(&mut t);
+        assert_eq!(tool(&items, "t4").bg.as_ref().unwrap().id, "bgA");
+    }
+
+    #[test]
+    fn unmatched_notice_stays_visible_matched_does_not_duplicate() {
+        let mut lines = bg_lines();
+        lines.push(notice_line("E", "D", "2026-11-25T00:00:00.130Z", NOTICE_A));
+        let other = NOTICE_A.replace("bgA", "zzz").replace("t1", "nope");
+        lines.push(notice_line("F", "E", "2026-11-25T00:00:00.140Z", &other));
+        let mut t = thread_from(&lines);
+        let sys: Vec<_> = content(&mut t)
+            .into_iter()
+            .filter_map(|i| match i {
+                Item::System { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(sys.len(), 1);
+        assert!(sys[0].contains("completed"));
     }
 
     #[test]

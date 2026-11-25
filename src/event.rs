@@ -89,6 +89,8 @@ pub struct ToolLinkInfo {
     pub agent_id: Option<String>,
     pub run_id: Option<String>,
     pub workflow_name: Option<String>,
+    /// `toolUseResult.status` (e.g. `async_launched`).
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -384,6 +386,7 @@ pub fn parse_line(line: &str) -> Option<Event> {
             agent_id: s("agentId"),
             run_id: s("runId"),
             workflow_name: s("workflowName"),
+            status: s("status"),
         };
         if link.agent_id.is_some() || link.run_id.is_some() {
             ev.link = Some(link);
@@ -430,7 +433,12 @@ pub fn parse_line(line: &str) -> Option<Event> {
         ev.blocks.clear();
     }
     if ev.kind == Kind::User {
-        if let Some(n) = ev.prompt.as_deref().and_then(parse_task_notification) {
+        let notice = ev
+            .prompt
+            .as_deref()
+            .filter(|p| p.trim_start().starts_with("<task-notification>"))
+            .and_then(parse_task_notification);
+        if let Some(n) = notice {
             ev.kind = Kind::TaskNotice(n);
         }
     }
@@ -683,6 +691,12 @@ mod tests {
             parse_line(l).unwrap().bg_task_id.as_deref(),
             Some("bqat3cqah")
         );
+    }
+
+    #[test]
+    fn quoted_notification_tag_mid_text_stays_user() {
+        let l = r#"{"type":"user","uuid":"u","message":{"content":"look at this: <task-notification><task-id>x</task-id></task-notification>"}}"#;
+        assert_eq!(parse_line(l).unwrap().kind, Kind::User);
     }
 
     #[test]
