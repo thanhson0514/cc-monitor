@@ -4,7 +4,7 @@ Thanks for helping! ccmon is MIT-licensed: you may use, modify, redistribute and
 To keep one shared source of truth, **changes to the code go through this repository**:
 
 - **Found a bug or have an idea?** Open an [issue](https://github.com/thanhson0514/cc-monitor/issues).
-  Search first; add your OS, ccmon version, and which tool (Claude Code / Codex).
+  Search first; add your OS, ccmon version and Claude Code version.
 - **Want to change code?** [Fork](https://github.com/thanhson0514/cc-monitor/fork) the repo,
   create a branch, and open a pull request against `main`. For larger changes, open an issue
   first so we can agree on the approach.
@@ -35,7 +35,7 @@ python3 demo/make_demo.py /tmp/ccmon-demo   # prints env vars to export
 
 | Path | What |
 |---|---|
-| `src/` | Core library (`cc_monitor`): transcript parsers (Claude Code, Codex), live store, TUI binary `ccmon` |
+| `src/` | Core library (`cc_monitor`): Claude Code transcript parser, live store, TUI binary `ccmon` |
 | `gui/src-tauri/` | Desktop app backend (Tauri 2) |
 | `gui/ui/` | Desktop app frontend (React + Vite) |
 | `website/` | Landing page (GitHub Pages) |
@@ -51,8 +51,8 @@ python3 demo/make_demo.py /tmp/ccmon-demo   # prints env vars to export
 
 ## Principles
 
-- **Read-only.** ccmon never writes into `~/.claude` or `~/.codex`, except the explicit,
+- **Read-only.** ccmon never writes into `~/.claude`, except the explicit,
   opt-in status-line wrapper (with backup and an uninstall button).
 - **Local only.** No network calls, no telemetry.
-- **Tolerant parsing.** Transcript formats are internal to each tool and change; unknown
+- **Tolerant parsing.** The transcript format is internal to Claude Code and changes; unknown
   lines must be skipped, never crash the app.

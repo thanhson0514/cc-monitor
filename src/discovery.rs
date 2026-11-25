@@ -704,7 +704,15 @@ mod tests {
             },
             tx,
         )
-        .with_codex(home.path().to_path_buf());
+        .with_codex(home.path().to_path_buf())
+        // Codex is off by default (config::CODEX_ENABLED); the parser is still tested.
+        .with_config(SharedConfig::new(std::sync::Mutex::new(
+            crate::config::Config {
+                setup_done: true,
+                claude: true,
+                codex: true,
+            },
+        )));
         w.rescan().unwrap();
         let msgs: Vec<Msg> = rx.try_iter().collect();
         assert!(msgs

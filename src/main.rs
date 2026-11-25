@@ -118,10 +118,11 @@ fn run_tui(root: PathBuf, opts: discovery::ScanOpts) -> Result<()> {
     let cfg = config::load();
     let shared = config::SharedConfig::new(std::sync::Mutex::new(cfg));
     std::thread::spawn(move || {
-        discovery::Worker::new(root, opts, tx)
-            .with_codex(platform::codex_home())
-            .with_config(shared)
-            .run()
+        let mut worker = discovery::Worker::new(root, opts, tx).with_config(shared);
+        if config::CODEX_ENABLED {
+            worker = worker.with_codex(platform::codex_home());
+        }
+        worker.run()
     });
 
     let default_hook = std::panic::take_hook();

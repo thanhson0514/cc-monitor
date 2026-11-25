@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { api, fmtTokens, HistoryProject, StatusInfo, ThreadView, TreeRow } from './api';
+import { api, fmtDur, fmtTokens, HistoryProject, StatusInfo, ThreadView, TreeRow } from './api';
 import { Chat } from './Chat';
 import { Sidebar, Viewer } from './Sidebar';
 import { ChangesPanel } from './Changes';
 import { Setup } from './Setup';
+import logo from './assets/logo.png';
 
 const PAGE = 400;
 
@@ -59,18 +60,66 @@ function ago(ts: number): string {
     return `${Math.round(h / 24)} ngày trước`;
 }
 
+function PanelIcon({ open }: { open: boolean }) {
+    return (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+            <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="2" />
+            <path d="M6 3v10" />
+            <path d={open ? 'M11 6.5 9.5 8l1.5 1.5' : 'M9.5 6.5 11 8l-1.5 1.5'} strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+    );
+}
+
+/** Collapsed tree: logo, expand button and one dot per open session. */
+function TreeRail({
+    rows,
+    selected,
+    onSelect,
+    onExpand
+}: {
+    rows: TreeRow[];
+    selected: string | null;
+    onSelect: (k: string) => void;
+    onExpand: () => void;
+}) {
+    const sessions = rows.filter((r) => r.depth === 0 && r.open);
+    return (
+        <nav className="tree tree-rail">
+            <img className="brand-logo" src={logo} alt="ccmon" />
+            <button type="button" className="icon-btn" onClick={onExpand} title="Mở thanh bên (Ctrl+B)">
+                <PanelIcon open={false} />
+            </button>
+            <div className="rail-sep" />
+            {sessions.map((r) => (
+                <button
+                    key={r.key}
+                    type="button"
+                    className={`rail-item ${selected === r.key ? 'selected' : ''}`}
+                    onClick={() => onSelect(r.key)}
+                    title={`${r.label}\n${r.live === 'busy' ? 'Đang làm' : 'Đang chờ'}`}
+                >
+                    <span className={`rail-dot ${r.live === 'busy' ? 'busy' : ''}`} />
+                    <span className="rail-initial">{r.label.slice(0, 1).toUpperCase()}</span>
+                </button>
+            ))}
+        </nav>
+    );
+}
+
 function Tree({
     rows,
     selected,
     onSelect,
     onOpenOld,
-    onSettings
+    onSettings,
+    onCollapse
 }: {
     rows: TreeRow[];
     selected: string | null;
     onSelect: (k: string) => void;
     onOpenOld: (sid: string) => void;
     onSettings: () => void;
+    onCollapse: () => void;
 }) {
     const blocks = sessionBlocks(rows);
     const open = blocks.filter((b) => b[0].open);
@@ -96,9 +145,12 @@ function Tree({
     return (
         <nav className="tree">
             <div className="brand">
-                <span className="brand-logo">◆</span> ccmon
+                <img className="brand-logo" src={logo} alt="" /> ccmon
                 <button type="button" className="gear" onClick={onSettings} title="Cài đặt: chọn Claude Code / Codex">
                     ⚙
+                </button>
+                <button type="button" className="icon-btn" onClick={onCollapse} title="Thu gọn thanh bên (Ctrl+B)">
+                    <PanelIcon open />
                 </button>
             </div>
             <div className="pane-title">Đang mở · {open.length}</div>
@@ -149,46 +201,144 @@ function Tree({
     );
 }
 
-function Seg({ color, children }: { color: string; children: React.ReactNode }) {
-    return <span className={`seg seg-${color}`}>{children}</span>;
+/** Small labelled usage bar; colour shifts as it fills. */
+function Meter({ label, value, detail, title }: { label: string; value: number | null; detail?: string; title: string }) {
+    const level = value == null ? 'none' : value >= 85 ? 'high' : value >= 60 ? 'mid' : 'low';
+    return (
+        <span className={`meter meter-${level}`} title={title}>
+            <span className="sb-label">{label}</span>
+            <span className="meter-track">
+                <span className="meter-fill" style={{ width: `${Math.min(100, Math.max(0, value ?? 0))}%` }} />
+            </span>
+            <span className="sb-val">{value == null ? '—' : `${Math.round(value)}%`}</span>
+            {detail && <span className="sb-label">{detail}</span>}
+        </span>
+    );
 }
 
 function StatusBar({ s }: { s: StatusInfo | null }) {
     if (!s) return <footer className="statusbar" />;
-    const pct = (v: number | null) => (v == null ? '—' : `${v.toFixed(1)}%`);
     const gb = (b: number) => `${(b / 1024 ** 3).toFixed(1)}G`;
+    const tok = (n: number | null) => (n == null ? '—' : fmtTokens(n).replace('K', 'k'));
+    const ctxDetail = s.ctx != null || s.win != null ? `${tok(s.ctx)}/${tok(s.win)}${s.winEstimated ? '?' : ''}` : undefined;
     return (
         <footer className="statusbar">
-            <div className="seg-row">
-                <Seg color="blue">Model: {s.model ?? '—'}</Seg>
-                <Seg color="gray">Ctx: {s.ctx != null ? fmtTokens(s.ctx).replace('K', 'k') : '—'}</Seg>
-                {s.branch && <Seg color="purple">⎇ {s.branch}</Seg>}
-                {s.lines && (
-                    <Seg color="yellow">
-                        (+{s.lines[0]},-{s.lines[1]})
-                    </Seg>
+            <div className="sb-group">
+                <span className="sb-chip sb-model" title="Model">
+                    {s.model ?? '—'}
+                </span>
+                {s.effort && (
+                    <span className="sb-item" title="Mức suy nghĩ (effort)">
+                        <span className="sb-label">effort</span> <span className="sb-val">{s.effort}</span>
+                    </span>
+                )}
+                {s.branch && (
+                    <span className="sb-item" title="Nhánh git">
+                        <span className="sb-label">⎇</span> <span className="sb-val">{s.branch}</span>
+                        {s.lines && (
+                            <span className="sb-lines">
+                                <span className="add">+{s.lines[0]}</span> <span className="del">−{s.lines[1]}</span>
+                            </span>
+                        )}
+                    </span>
+                )}
+            </div>
+            <div className="sb-group">
+                <Meter
+                    label="Ctx"
+                    value={s.ctxPct}
+                    detail={ctxDetail}
+                    title={`Ngữ cảnh đã dùng${s.winEstimated ? ' (cửa sổ ước tính)' : ''}`}
+                />
+                <Meter label="5h" value={s.fiveH} title="Hạn mức phiên 5 giờ đã dùng" />
+                <Meter label="Tuần" value={s.sevenD} title="Hạn mức tuần đã dùng" />
+            </div>
+            <div className="sb-group sb-right">
+                {s.compactions > 0 && (
+                    <span className="sb-item" title="Số lần compact">
+                        <span className="sb-label">↻</span> <span className="sb-val">{s.compactions}</span>
+                    </span>
                 )}
                 {s.mem && (
-                    <Seg color="yellow">
-                        Mem: {gb(s.mem[0])}/{gb(s.mem[1])}
-                    </Seg>
+                    <span className="sb-item" title="Bộ nhớ máy">
+                        <span className="sb-label">RAM</span>{' '}
+                        <span className="sb-val">
+                            {gb(s.mem[0])}/{gb(s.mem[1])}
+                        </span>
+                    </span>
                 )}
-                <Seg color="teal">Thinking: {s.effort ?? '—'}</Seg>
-            </div>
-            <div className="seg-row">
-                <Seg color="yellow">Session: {pct(s.fiveH)}</Seg>
-                <Seg color="teal">Weekly: {pct(s.sevenD)}</Seg>
-                <Seg color="teal">Ctx(u) Used: {pct(s.ctxPct)}</Seg>
-                <Seg color="blue">
-                    Win: {s.win != null ? fmtTokens(s.win) : '—'}
-                    {s.winEstimated ? '?' : ''}
-                </Seg>
-                <Seg color="gray">↻ {s.compactions}</Seg>
-                <span className="status-extra">
-                    {s.sessions} phiên hoạt động · {s.runningAgents} agent đang chạy
+                <span className="sb-item" title="Phiên hoạt động · agent đang chạy">
+                    <span className="sb-val">{s.sessions}</span> <span className="sb-label">phiên</span>
+                    <span className="sb-label"> · </span>
+                    <span className={`sb-val ${s.runningAgents > 0 ? 'st-running' : ''}`}>{s.runningAgents}</span>{' '}
+                    <span className="sb-label">agent</span>
                 </span>
             </div>
         </footer>
+    );
+}
+
+type Activity = { state: 'busy' | 'waiting' | 'stopped'; text: string; detail?: string; since: number | null };
+
+/** What the selected thread is doing right now, derived from its last items. */
+function activityOf(view: ThreadView | null, row: TreeRow | undefined, rows: TreeRow[]): Activity | null {
+    if (!view || !row) return null;
+    const busy = row.kind === 'main' ? row.live === 'busy' || (row.live == null && row.status === 'running') : row.status === 'running';
+    if (!busy) {
+        if (row.kind === 'main' && row.live) return { state: 'waiting', text: 'Đang chờ bạn nhập', since: null };
+        return { state: 'stopped', text: row.status === 'error' ? 'Đã dừng do lỗi' : 'Không hoạt động', since: null };
+    }
+    // Sub-agents still running under this thread.
+    const i = rows.findIndex((r) => r.key === row.key);
+    let subs = 0;
+    if (i >= 0)
+        for (const r of rows.slice(i + 1)) {
+            if (r.depth <= row.depth) break;
+            if (r.status === 'running' && r.kind !== 'workflow') subs++;
+        }
+    const subText = subs > 0 ? `${subs} agent con đang chạy` : undefined;
+
+    const items = view.items;
+    let turnStart: number | null = null;
+    for (let k = items.length - 1; k >= 0; k--) {
+        const it = items[k];
+        if (it.type === 'prompt') {
+            turnStart = it.ts;
+            break;
+        }
+    }
+    const running = [...items].reverse().find((it): it is Extract<typeof it, { type: 'tool' }> => it.type === 'tool' && it.state === 'running');
+    if (running) {
+        if (running.link)
+            return {
+                state: 'busy',
+                text: `Đang chờ ${running.link.kind === 'workflow' ? 'workflow' : 'agent'}`,
+                detail: running.link.label ?? running.summary,
+                since: running.started ?? turnStart
+            };
+        return { state: 'busy', text: `Đang chạy ${running.name}`, detail: running.summary || subText, since: running.started ?? turnStart };
+    }
+    const last = items[items.length - 1];
+    const text =
+        !last || last.type === 'prompt'
+            ? 'Đang xử lý yêu cầu'
+            : last.type === 'text'
+              ? 'Đang trả lời'
+              : last.type === 'compact'
+                ? 'Đang compact ngữ cảnh'
+                : 'Đang suy nghĩ';
+    return { state: 'busy', text, detail: subText, since: turnStart };
+}
+
+function ActivityBar({ a, now }: { a: Activity | null; now: number }) {
+    if (!a) return null;
+    return (
+        <div className={`activity act-${a.state}`} role="status" aria-live="polite">
+            <span className="act-dot" />
+            <span className="act-text">{a.text}</span>
+            {a.detail && <span className="act-detail">{a.detail}</span>}
+            {a.state === 'busy' && a.since != null && <span className="act-time">{fmtDur(Math.max(0, now - a.since))}</span>}
+        </div>
     );
 }
 
@@ -229,6 +379,30 @@ export default function App() {
         api.setup().then((i) => !i.config.setupDone && setSetup('first'));
     }, []);
     const showSidebar = panel !== null;
+    const [treeOpen, setTreeOpen] = useState(() => {
+        try {
+            return localStorage.getItem('ccmon.treeOpen') !== '0';
+        } catch {
+            return true;
+        }
+    });
+    useEffect(() => {
+        try {
+            localStorage.setItem('ccmon.treeOpen', treeOpen ? '1' : '0');
+        } catch {
+            /* storage unavailable: keep in memory only */
+        }
+    }, [treeOpen]);
+    useEffect(() => {
+        const k = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+                e.preventDefault();
+                setTreeOpen((o) => !o);
+            }
+        };
+        window.addEventListener('keydown', k);
+        return () => window.removeEventListener('keydown', k);
+    }, []);
     const [assetTick, setAssetTick] = useState(0);
     const pendingOpen = useRef<string | null>(null);
     const scroller = useRef<HTMLDivElement>(null);
@@ -368,8 +542,19 @@ export default function App() {
     };
 
     return (
-        <div className={`app ${showSidebar ? 'with-sidebar' : ''}`}>
-            <Tree rows={rows} selected={selected} onSelect={select} onOpenOld={openOld} onSettings={() => setSetup('settings')} />
+        <div className={`app ${showSidebar ? 'with-sidebar' : ''} ${treeOpen ? '' : 'tree-collapsed'}`}>
+            {treeOpen ? (
+                <Tree
+                    rows={rows}
+                    selected={selected}
+                    onSelect={select}
+                    onOpenOld={openOld}
+                    onSettings={() => setSetup('settings')}
+                    onCollapse={() => setTreeOpen(false)}
+                />
+            ) : (
+                <TreeRail rows={rows} selected={selected} onSelect={select} onExpand={() => setTreeOpen(true)} />
+            )}
             <main className="main">
                 <header className="thread-head">
                     {history.length > 0 && (
@@ -437,6 +622,7 @@ export default function App() {
                     )}
                     </div>
                 </div>
+                <ActivityBar a={activityOf(view && view.key === selected ? view : null, row, rows)} now={now} />
                 <StatusBar s={status} />
             </main>
             {panel === 'assets' && selected && (

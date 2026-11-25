@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ccmon",
   "mainBinaryName": "ccmon-gui",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "identifier": "io.github.thanhson0514.ccmon",
   "build": {
     "frontendDist": "../ui/dist",
@@ -14,7 +14,7 @@
   "app": {
     "windows": [
       {
-        "title": "ccmon — Claude Code & Codex monitor",
+        "title": "ccmon — Claude Code monitor",
         "width": 1400,
         "height": 900,
         "minWidth": 720,
@@ -38,8 +38,8 @@
     "license": "MIT",
     "homepage": "https://thanhson0514.github.io/cc-monitor",
     "category": "DeveloperTool",
-    "shortDescription": "Watch Claude Code and Codex sessions, sub-agents and workflows live",
-    "longDescription": "ccmon is a read-only desktop monitor for AI coding agents. It reads the session transcripts Claude Code and Codex already write on your machine and shows every step: prompts, tool calls, sub-agents, workflows, files changed (with side-by-side diffs), images and plan usage.",
+    "shortDescription": "Watch Claude Code sessions, sub-agents and workflows live",
+    "longDescription": "ccmon is a read-only desktop monitor for AI coding agents. It reads the session transcripts Claude Code already writes on your machine and shows every step: prompts, tool calls, sub-agents, workflows, files changed (with side-by-side diffs), images and plan usage.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

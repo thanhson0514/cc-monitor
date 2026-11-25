@@ -44,7 +44,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf xvfb imagemagick
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf xvfb imagemagick x11-utils
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
@@ -86,11 +86,20 @@ jobs:
           echo '{"session_id":"t"}' | ./target/release/ccmon tee -- echo tee-ok
           # WebKitGTK has no GPU under Xvfb: force software rendering so the window paints.
           export WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1
+          python -m pip install --quiet pillow
+          # A cold runner can take a while to start WebKit: retake the screenshot until the
+          # page has painted (or 90 s pass), then leave diagnostics for the next step.
           xvfb-run -a -s "-screen 0 1400x900x24" bash -c '
-            ./target/release/ccmon-gui & pid=$!
-            sleep 20
-            kill -0 $pid || { echo "ccmon-gui exited early"; exit 1; }
-            import -window root smoke-linux.png
+            ./target/release/ccmon-gui > smoke-linux.log 2>&1 & pid=$!
+            for i in $(seq 1 18); do
+              sleep 5
+              kill -0 $pid || { echo "ccmon-gui exited early"; cat smoke-linux.log; exit 1; }
+              import -window root smoke-linux.png
+              colors=$(python -c "from PIL import Image; print(len(set(Image.open(\"smoke-linux.png\").convert(\"RGB\").resize((280, 180)).getdata())))")
+              echo "after $((i * 5)) s: $colors colors"
+              [ "$colors" -gt 40 ] && break
+            done
+            xwininfo -root -tree > smoke-linux-windows.txt 2>&1 || true
             kill $pid'
       - name: Check the screenshot is not blank
         shell: bash
@@ -104,12 +113,18 @@ jobs:
           for f in files:
               img = Image.open(f).convert("RGB").resize((280, 180))
               colors = len(set(img.getdata()))
-              print(f, img.size, "distinct colors:", colors)
+              print(f, img.size, "distinct colors:", colors, "top-left pixel:", img.getpixel((0, 0)))
+              if colors <= 40:
+                  for log in glob.glob(f.replace(".png", "*.log")) + glob.glob(f.replace(".png", "-windows.txt")):
+                      print(f"--- {log}"); print(open(log, errors="replace").read()[-4000:])
               assert colors > 40, f"{f} looks blank ({colors} colors): the window did not render"
           PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: smoke-${{ matrix.os }}
-          path: smoke-*.png
+          path: |
+            smoke-*.png
+            smoke-*.log
+            smoke-*-windows.txt
           if-no-files-found: warn

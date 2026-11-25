@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a self-contained demo dataset for ccmon (Claude Code + Codex sessions).
+"""Generate a self-contained demo dataset for ccmon (Claude Code sessions).
 
 Used for screenshots and for the CI smoke test on Windows/Linux. Everything is fake.
 
@@ -21,11 +21,9 @@ from datetime import datetime, timedelta, timezone
 OUT = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "demo-data")
 NOW = datetime.now(timezone.utc)
 CLAUDE = os.path.join(OUT, "claude")
-CODEX = os.path.join(OUT, "codex")
 WORK = os.path.join(OUT, "workspace", "acme-shop")
 PROJECT_KEY = "".join("-" if c in "/\\.:" else c for c in WORK)
 SID = "7d3c2a10-4b5e-4f60-9a71-0c2d3e4f5a6b"
-CODEX_ID = "01a1b2c3-d4e5-7f60-8a71-92b3c4d5e6f7"
 
 
 def ts(sec_ago):
@@ -210,44 +208,16 @@ def claude_session():
         "cost": {"total_lines_added": 24, "total_lines_removed": 3}, "effort": {"level": "medium"}}))
 
 
-def codex_session():
-    day = os.path.join(CODEX, "sessions", NOW.strftime("%Y/%m/%d"))
-    path = os.path.join(day, f"rollout-{NOW.strftime('%Y-%m-%dT%H-%M-%S')}-{CODEX_ID}.jsonl")
-    cwd = os.path.join(OUT, "workspace", "acme-api")
-    write(os.path.join(cwd, "src/routes/payments.ts"), "export const routes = [];\n")
-    L = []
-    def add(ago, typ, payload):
-        L.append({"timestamp": ts(ago), "type": typ, "payload": payload})
-    add(1200, "session_meta", {"id": CODEX_ID, "cwd": cwd, "originator": "codex_cli_rs"})
-    add(1199, "turn_context", {"turn_id": "T1", "model": "gpt-5-codex", "effort": "high", "cwd": cwd})
-    add(1198, "event_msg", {"type": "user_message", "message": "Thêm endpoint GET /payments/:id/status cho QR, có test.", "local_images": []})
-    add(1196, "response_item", {"type": "reasoning", "summary": [], "encrypted_content": "gAAAA"})
-    add(1195, "event_msg", {"type": "agent_message", "message": "Mình xem router thanh toán hiện có rồi thêm endpoint trạng thái.", "turn_id": "T1"})
-    add(1190, "response_item", {"type": "custom_tool_call", "call_id": "x1", "name": "exec", "input": "const r = await tools.exec_command({\"cmd\":\"rg -n \\\"payments\\\" src/routes\"})"})
-    add(1189, "response_item", {"type": "custom_tool_call_output", "call_id": "x1", "output": [{"type": "input_text", "text": "Script completed\nsrc/routes/payments.ts:1:export const routes = [];"}]})
-    add(1150, "event_msg", {"type": "patch_apply_end", "call_id": "p1", "success": True, "stdout": "Success. Updated the following files:\nM src/routes/payments.ts",
-                            "changes": {os.path.join(cwd, "src/routes/payments.ts"): {"type": "update"}}})
-    add(1100, "response_item", {"type": "custom_tool_call", "call_id": "x2", "name": "exec", "input": "const r = await tools.exec_command({\"cmd\":\"npm test -- payments\"})"})
-    add(1092, "response_item", {"type": "custom_tool_call_output", "call_id": "x2", "output": [{"type": "input_text", "text": "Script completed\nTests: 3 passed, 3 total"}]})
-    add(1091, "event_msg", {"type": "token_count", "info": {"last_token_usage": {"input_tokens": 38400, "cached_input_tokens": 30100, "output_tokens": 912},
-                                                           "model_context_window": 272000},
-                            "rate_limits": {"primary": {"used_percent": 22.0}, "secondary": {"used_percent": 57.0}}})
-    add(1090, "event_msg", {"type": "agent_message", "message": "Đã thêm `GET /payments/:id/status`, 3/3 test pass.", "turn_id": "T1"})
-    write(path, "".join(json.dumps(l, ensure_ascii=False) + "\n" for l in L))
-    write(os.path.join(CODEX, "session_index.jsonl"), json.dumps({"id": CODEX_ID, "thread_name": "Endpoint trạng thái thanh toán", "updated_at": ts(1090)}) + "\n")
-
-
 def main():
     claude_session()
-    codex_session()
     cfg = os.path.join(OUT, "config.json")
-    write(cfg, json.dumps({"setupDone": True, "claude": True, "codex": True}))
+    write(cfg, json.dumps({"setupDone": True, "claude": True, "codex": False}))
     # make everything look recently written
     now = time.time()
     for root, _, files in os.walk(OUT):
         for f in files:
             os.utime(os.path.join(root, f), (now, now))
-    env = {"CCMON_CLAUDE_DIR": CLAUDE, "CCMON_CODEX_DIR": CODEX, "CCMON_CACHE_DIR": os.path.join(OUT, "cache"), "CCMON_CONFIG": cfg}
+    env = {"CCMON_CLAUDE_DIR": CLAUDE, "CCMON_CACHE_DIR": os.path.join(OUT, "cache"), "CCMON_CONFIG": cfg}
     print(json.dumps(env))
 
 
