@@ -66,6 +66,77 @@ pub enum Kind {
     /// A `<task-notification>` about a finished background task. Stays in the
     /// `parentUuid` chain like `Link`.
     TaskNotice(TaskNotice),
+    /// What the session announced as available (`skill_listing`,
+    /// `mcp_instructions_delta`, `agent_listing_delta`, `deferred_tools_delta`).
+    /// Stays in the `parentUuid` chain like `Link`.
+    Inventory(InventoryDelta),
+}
+
+/// Names announced by an inventory attachment. `removed` (when present) lists
+/// names the same attachment took away.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct InventoryDelta {
+    pub skills: Vec<String>,
+    pub mcp: Vec<String>,
+    pub agents: Vec<String>,
+    pub deferred_tools: Vec<String>,
+    pub removed: Option<Box<InventoryDelta>>,
+}
+
+impl InventoryDelta {
+    pub fn is_empty(&self) -> bool {
+        self.skills.is_empty()
+            && self.mcp.is_empty()
+            && self.agents.is_empty()
+            && self.deferred_tools.is_empty()
+            && self.removed.as_ref().is_none_or(|r| r.is_empty())
+    }
+}
+
+fn str_list(a: &Value, key: &str) -> Vec<String> {
+    a.get(key)
+        .and_then(Value::as_array)
+        .map(|v| v.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// `- name: description` lines of a `skill_listing`; the name may contain `:`
+/// (`plugin:skill`), the description separator is `": "`.
+fn skill_names(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .filter_map(|l| l.trim_start().strip_prefix("- "))
+        .map(|l| l.split_once(": ").map_or(l, |(n, _)| n).trim())
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn inventory_of(a: &Value) -> Option<InventoryDelta> {
+    let mut d = InventoryDelta::default();
+    let mut r = InventoryDelta::default();
+    match a.get("type").and_then(Value::as_str)? {
+        "skill_listing" => {
+            d.skills = skill_names(a.get("content").and_then(Value::as_str).unwrap_or(""))
+        }
+        "mcp_instructions_delta" => {
+            d.mcp = str_list(a, "addedNames");
+            r.mcp = str_list(a, "removedNames");
+        }
+        "agent_listing_delta" => {
+            d.agents = str_list(a, "addedTypes");
+            r.agents = str_list(a, "removedTypes");
+        }
+        "deferred_tools_delta" => {
+            d.deferred_tools = str_list(a, "addedNames");
+            r.deferred_tools = str_list(a, "removedNames");
+        }
+        _ => return None,
+    }
+    if !r.is_empty() {
+        d.removed = Some(Box::new(r));
+    }
+    Some(d)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -287,6 +358,18 @@ fn attachment_event(line: &str, head: &Head) -> Option<Event> {
         }
     }
     let head_bytes = &line.as_bytes()[..line.len().min(4096)];
+    if ["skill_listing", "mcp_instructions_delta", "agent_listing_delta", "deferred_tools_delta"]
+        .iter()
+        .any(|t| line.contains(t))
+    {
+        if let Ok(raw) = serde_json::from_str::<Raw>(line) {
+            if let Some(d) = raw.attachment.as_ref().and_then(inventory_of) {
+                ev.kind = Kind::Inventory(d);
+                ev.ts = raw.timestamp.as_deref().and_then(parse_ts);
+                return Some(ev);
+            }
+        }
+    }
     let has = |pat: &[u8]| head_bytes.windows(pat.len()).any(|w| w == pat);
     if !(has(b"\"type\":\"file\"") || has(b"\"type\":\"directory\"")) {
         return Some(ev);
@@ -722,5 +805,28 @@ mod tests {
             );
             assert_eq!(n.tool_use_id, None);
         }
+    }
+
+    #[test]
+    fn parses_inventory_attachments() {
+        let mk = |att: &str| {
+            let l = format!(r#"{{"type":"attachment","uuid":"u","parentUuid":"p","attachment":{att}}}"#);
+            parse_line(&l).unwrap()
+        };
+        let Kind::Inventory(d) = mk(r#"{"type":"skill_listing","content":"- agent-browser: Browser x: y\n- foo:bar: d\nnoise\n- bare"}"#).kind else {
+            panic!()
+        };
+        assert_eq!(d.skills, ["agent-browser", "foo:bar", "bare"]);
+        let e = mk(r#"{"type":"mcp_instructions_delta","addedNames":["cde","claude.ai Claude Docs"],"removedNames":["old"]}"#);
+        assert_eq!(e.parent.as_deref(), Some("p"));
+        let Kind::Inventory(d) = e.kind else { panic!() };
+        assert_eq!(d.mcp, ["cde", "claude.ai Claude Docs"]);
+        assert_eq!(d.removed.unwrap().mcp, ["old"]);
+        let Kind::Inventory(d) = mk(r#"{"type":"agent_listing_delta","addedTypes":["Explore"]}"#).kind else { panic!() };
+        assert_eq!(d.agents, ["Explore"]);
+        let Kind::Inventory(d) = mk(r#"{"type":"deferred_tools_delta","addedNames":["mcp__a__b"]}"#).kind else { panic!() };
+        assert_eq!(d.deferred_tools, ["mcp__a__b"]);
+        // malformed field types do not panic
+        assert!(matches!(mk(r#"{"type":"agent_listing_delta","addedTypes":5}"#).kind, Kind::Inventory(_)));
     }
 }

@@ -1,7 +1,7 @@
 //! One conversation thread (main session, subagent or workflow agent) built from events.
 
 use crate::bgtask::{BgKind, BgState, BgTask, Registry};
-use crate::event::{Block, Event, Kind, RateInfo, Usage};
+use crate::event::{Block, Event, InventoryDelta, Kind, RateInfo, Usage};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -110,6 +110,26 @@ pub struct Thread {
     last_tool: Option<String>,
     first_ts: Option<i64>,
     user_files: Vec<UserFile>,
+    inventory: InventoryDelta,
+    inventory_seen: HashSet<String>,
+}
+
+fn merge_list(into: &mut Vec<String>, add: &[String], remove: &[String]) {
+    for a in add {
+        if !into.contains(a) {
+            into.push(a.clone());
+        }
+    }
+    into.retain(|x| !remove.contains(x));
+}
+
+fn merge_inventory(into: &mut InventoryDelta, d: &InventoryDelta) {
+    let none = InventoryDelta::default();
+    let r = d.removed.as_deref().unwrap_or(&none);
+    merge_list(&mut into.skills, &d.skills, &r.skills);
+    merge_list(&mut into.mcp, &d.mcp, &r.mcp);
+    merge_list(&mut into.agents, &d.agents, &r.agents);
+    merge_list(&mut into.deferred_tools, &d.deferred_tools, &r.deferred_tools);
 }
 
 /// A file the user supplied: pasted image, `@` mention of a file or directory.
@@ -184,6 +204,12 @@ impl Thread {
                 return;
             }
             Kind::System { subtype, .. } if subtype == "compact_boundary" => self.compactions += 1,
+            Kind::Inventory(d) => {
+                // Replayed lines (same uuid) must not re-add what a later line removed.
+                if ev.uuid.as_ref().is_none_or(|u| self.inventory_seen.insert(u.clone())) {
+                    merge_inventory(&mut self.inventory, d);
+                }
+            }
             Kind::TaskNotice(n) => {
                 self.bg.notice(n, ev.ts);
                 self.notices.push((n.task_id.clone(), ev.ts));
@@ -542,6 +568,20 @@ impl Thread {
         if !self.user_files.iter().any(|f| f.path == path) {
             self.user_files.push(UserFile { ts, path, kind });
         }
+    }
+
+    /// Everything the session announced as available, accumulated over all lines.
+    pub fn inventory(&self) -> &InventoryDelta {
+        &self.inventory
+    }
+
+    /// Every distinct tool call seen: `(tool_use id, name, input, ts)`. Keyed by
+    /// tool_use id, so a line pushed twice is counted once.
+    pub fn tool_uses(&self) -> impl Iterator<Item = (&str, &str, &Value, Option<i64>)> {
+        self.tool_inputs.iter().filter_map(|(id, (input, ts))| {
+            let name = self.tool_names.get(id)?;
+            Some((id.as_str(), name.as_str(), input, *ts))
+        })
     }
 
     pub fn user_files(&self) -> &[UserFile] {
@@ -995,5 +1035,24 @@ mod tests {
                 .count()
                 <= 120
         );
+    }
+
+    #[test]
+    fn inventory_delta_accumulates_and_removes() {
+        let att = |u: &str, p: &str, body: &str| {
+            format!(r#"{{"type":"attachment","uuid":"{u}","parentUuid":"{p}","attachment":{body}}}"#)
+        };
+        let l1 = att("I1", "A", r#"{"type":"mcp_instructions_delta","addedNames":["cde","gh"]}"#);
+        let l2 = att("I2", "I1", r#"{"type":"mcp_instructions_delta","addedNames":["x"],"removedNames":["cde"]}"#);
+        let l3 = att("I3", "I2", r#"{"type":"agent_listing_delta","addedTypes":["Explore"]}"#);
+        let l4 = att("I4", "I3", r#"{"type":"skill_listing","content":"- s1: d\n- s2: d"}"#);
+        let a = r#"{"type":"user","uuid":"A","message":{"content":"a"}}"#.to_string();
+        let b = r#"{"type":"user","uuid":"B","parentUuid":"I4","message":{"content":"b"}}"#.to_string();
+        let mut t = thread(&[&a, &l1, &l2, &l1, &l3, &l4, &b]); // l1 replayed after l2 removed "cde"
+        let inv = t.inventory();
+        assert_eq!(inv.mcp, ["gh", "x"]);
+        assert_eq!(inv.agents, ["Explore"]);
+        assert_eq!(inv.skills, ["s1", "s2"]);
+        assert_eq!(t.items().len(), 2); // attachments stay in the chain, not shown
     }
 }

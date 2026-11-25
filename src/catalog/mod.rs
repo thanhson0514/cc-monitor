@@ -4,9 +4,13 @@
 //! Extending: add one provider file implementing [`Provider`] and one line in
 //! [`providers()`]. Nothing else needs to change.
 
+pub mod agents;
 pub mod frontmatter;
+pub mod mcp;
 pub mod plugins;
 pub mod skills;
+pub mod usage;
+pub mod workflows;
 
 use serde::Serialize;
 use serde_json::{Map, Value};
@@ -84,6 +88,9 @@ pub fn providers() -> Vec<Box<dyn Provider>> {
     vec![
         Box::new(plugins::PluginProvider),
         Box::new(skills::SkillProvider),
+        Box::new(mcp::McpProvider),
+        Box::new(agents::AgentProvider),
+        Box::new(workflows::WorkflowProvider),
     ]
 }
 
