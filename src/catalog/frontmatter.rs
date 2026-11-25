@@ -95,7 +95,18 @@ pub fn parse(md: &str) -> (Map<String, Value>, &str) {
                 map.insert(key, Value::String(String::new()));
             }
         } else {
-            map.insert(key, scalar(v));
+            let mut text = v.to_string();
+            while i < lines.len() && lines[i].starts_with([' ', '\t']) && !lines[i].trim().is_empty() {
+                text.push(' ');
+                text.push_str(lines[i].trim());
+                i += 1;
+            }
+            let val = if matches!(key.as_str(), "description" | "name") {
+                Value::String(unquote(&text).to_string())
+            } else {
+                scalar(&text)
+            };
+            map.insert(key, val);
         }
     }
     (map, body)
@@ -120,6 +131,16 @@ mod tests {
         assert_eq!(m["allowed"], serde_json::json!(["a", "b c"]));
         assert_eq!(m["note"], "folded text");
         assert_eq!(body, "# Body\n");
+    }
+
+    #[test]
+    fn plain_multiline_and_bracket_description() {
+        let (m, _) = parse("---\ndescription: foo\n  bar baz\nname: [x]\n---\n");
+        assert_eq!(m["description"], "foo bar baz");
+        assert_eq!(m["name"], "[x]");
+        let (m, _) = parse("---\ndescription: [WIP] thing\ntools: [A]\n---\n");
+        assert_eq!(m["description"], "[WIP] thing");
+        assert_eq!(m["tools"], serde_json::json!(["A"]));
     }
 
     #[test]

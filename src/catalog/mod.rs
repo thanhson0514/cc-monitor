@@ -92,3 +92,18 @@ pub(crate) fn write(p: &std::path::Path, s: &str) {
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
     std::fs::write(p, s).unwrap();
 }
+
+#[cfg(test)]
+mod shape_tests {
+    use super::*;
+
+    #[test]
+    fn scope_json_shape() {
+        let j = |s: Scope| serde_json::to_value(s).unwrap();
+        assert_eq!(j(Scope::User), serde_json::json!("user"));
+        assert_eq!(j(Scope::Project), serde_json::json!("project"));
+        assert_eq!(j(Scope::BuiltIn), serde_json::json!("builtIn"));
+        assert_eq!(j(Scope::Managed), serde_json::json!("managed"));
+        assert_eq!(j(Scope::Plugin("x".into())), serde_json::json!({"plugin": "x"}));
+    }
+}

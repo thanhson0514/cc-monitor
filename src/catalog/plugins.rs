@@ -17,6 +17,20 @@ pub(crate) struct Installed {
     pub version: Option<String>,
     pub scope: Scope,
     pub enabled: bool,
+    /// Every install entry as recorded (scope, version, installPath, projectPath).
+    pub installs: Vec<Value>,
+    /// Only installed for other projects: not usable from the current cwd.
+    pub not_applicable: bool,
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
+    }
 }
 
 fn read_json(p: &Path) -> Option<Value> {
@@ -55,7 +69,17 @@ pub(crate) fn installed(ctx: &ScanCtx) -> Vec<Installed> {
     let mut out: Vec<Installed> = plugins
         .iter()
         .filter_map(|(id, entries)| {
-            let e = entries.as_array()?.first()?;
+            let arr = entries.as_array()?;
+            let project_of = |e: &Value| e.get("projectPath").and_then(|s| s.as_str()).map(PathBuf::from);
+            let matching = arr.iter().find(|e| match (project_of(e), &ctx.cwd) {
+                (Some(pp), Some(cwd)) => same_path(&pp, cwd),
+                _ => false,
+            });
+            let user = arr.iter().find(|e| project_of(e).is_none());
+            let (e, not_applicable) = match matching.or(user) {
+                Some(e) => (e, false),
+                None => (arr.first()?, true),
+            };
             let install_path = PathBuf::from(e.get("installPath")?.as_str()?);
             let scope = match e.get("scope").and_then(|s| s.as_str()) {
                 Some("project") | Some("local") => Scope::Project,
@@ -68,7 +92,9 @@ pub(crate) fn installed(ctx: &ScanCtx) -> Vec<Installed> {
                 install_path,
                 version: e.get("version").and_then(|s| s.as_str()).map(str::to_string),
                 scope,
-                enabled: enabled.get(id).copied().unwrap_or(false),
+                enabled: !not_applicable && enabled.get(id).copied().unwrap_or(false),
+                installs: arr.clone(),
+                not_applicable,
             })
         })
         .collect();
@@ -126,6 +152,10 @@ impl Provider for PluginProvider {
                 let mut meta = Map::new();
                 if let Some(v) = &p.version {
                     meta.insert("version".into(), json!(v));
+                }
+                meta.insert("installs".into(), Value::Array(p.installs.clone()));
+                if p.not_applicable {
+                    meta.insert("notApplicable".into(), json!(true));
                 }
                 meta.insert(
                     "components".into(),
@@ -206,5 +236,35 @@ mod tests {
         let ctx = fixture(t.path());
         write(&ctx.claude_home.join("plugins/installed_plugins.json"), "{not json");
         assert!(PluginProvider.scan(&ctx).is_empty());
+    }
+
+    #[test]
+    fn install_entry_chosen_for_cwd() {
+        let t = tempfile::tempdir().unwrap();
+        let ctx = fixture(t.path());
+        let proj = ctx.cwd.clone().unwrap();
+        std::fs::create_dir_all(&proj).unwrap();
+        write(&ctx.claude_home.join("settings.json"), r#"{"enabledPlugins":{"foo@mk":true}}"#);
+        let w = |body: &str| write(&ctx.claude_home.join("plugins/installed_plugins.json"), body);
+        // user + project (this cwd): project wins
+        w(&format!(
+            r#"{{"plugins":{{"foo@mk":[{{"scope":"user","installPath":"/u","version":"1"}},{{"scope":"project","installPath":"/p","version":"2","projectPath":"{}"}}]}}}}"#,
+            proj.display()
+        ));
+        let cap = &PluginProvider.scan(&ctx)[0];
+        assert_eq!(cap.scope, Scope::Project);
+        assert_eq!(cap.meta["version"], "2");
+        assert_eq!(cap.meta["installs"].as_array().unwrap().len(), 2);
+        assert!(cap.enabled_globally);
+        // user + project for ANOTHER repo: user entry
+        w(r#"{"plugins":{"foo@mk":[{"scope":"project","installPath":"/p","version":"2","projectPath":"/other"},{"scope":"user","installPath":"/u","version":"1"}]}}"#);
+        let cap = &PluginProvider.scan(&ctx)[0];
+        assert_eq!(cap.scope, Scope::User);
+        assert_eq!(cap.meta["version"], "1");
+        // only another project: not applicable
+        w(r#"{"plugins":{"foo@mk":[{"scope":"project","installPath":"/p","version":"2","projectPath":"/other"}]}}"#);
+        let cap = &PluginProvider.scan(&ctx)[0];
+        assert!(!cap.enabled_globally);
+        assert_eq!(cap.meta["notApplicable"], true);
     }
 }

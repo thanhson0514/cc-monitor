@@ -47,7 +47,7 @@ impl Provider for SkillProvider {
     fn scan(&self, ctx: &ScanCtx) -> Vec<Capability> {
         let mut out = Vec::new();
         scan_dir(&ctx.claude_home.join("skills"), None, &Scope::User, &mut out);
-        if let Some(cwd) = &ctx.cwd {
+        if let Some(cwd) = ctx.cwd.as_ref().filter(|c| c.join(".claude") != ctx.claude_home) {
             scan_dir(&cwd.join(".claude/skills"), None, &Scope::Project, &mut out);
         }
         for p in plugins::installed(ctx).into_iter().filter(|p| p.enabled) {
@@ -128,5 +128,15 @@ mod tests {
         let cat = super::super::Catalog::scan(&c);
         assert_eq!(cat.of(CapKind::Plugin).count(), 1);
         assert_eq!(cat.of(CapKind::Skill).count(), 4);
+    }
+
+    #[test]
+    fn cwd_equal_home_does_not_duplicate() {
+        let t = tempfile::tempdir().unwrap();
+        let mut c = ctx(t.path());
+        c.cwd = Some(t.path().join("home"));
+        let caps = SkillProvider.scan(&c);
+        assert_eq!(caps.iter().filter(|x| x.id == "usr").count(), 1);
+        assert!(!caps.iter().any(|x| x.id == "prj"));
     }
 }
