@@ -2,10 +2,10 @@
 
 use super::mcp::normalize;
 use super::{CapKind, Capability, Catalog, Scope};
-use serde_json::{Map, Value};
-use std::collections::{HashMap, HashSet};
 use crate::thread::Thread;
 use serde::Serialize;
+use serde_json::{Map, Value};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,7 +24,12 @@ pub struct SessionUsage {
 /// Workflow id: stem of `scriptPath` (matches the workflows provider ids), else
 /// `meta.name` scanned out of an inline `script`, else the bare `"workflow"`.
 fn workflow_id(input: &Value) -> String {
-    let s = |k: &str| input.get(k).and_then(Value::as_str).filter(|v| !v.is_empty());
+    let s = |k: &str| {
+        input
+            .get(k)
+            .and_then(Value::as_str)
+            .filter(|v| !v.is_empty())
+    };
     if let Some(stem) = s("scriptPath")
         .and_then(|p| std::path::Path::new(p).file_stem())
         .and_then(|n| n.to_str())
@@ -32,21 +37,30 @@ fn workflow_id(input: &Value) -> String {
     {
         return stem.to_string();
     }
-    s("script").and_then(meta_name).unwrap_or_else(|| "workflow".to_string())
+    s("script")
+        .and_then(meta_name)
+        .unwrap_or_else(|| "workflow".to_string())
 }
 
 /// Tolerant scan for `name: '...'` (single or double quotes) after `meta`.
 fn meta_name(script: &str) -> Option<String> {
     let mut rest = &script[script.find("meta")? + 4..];
     while let Some(i) = rest.find("name") {
-        let before_ok = rest[..i].chars().next_back().is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
+        let before_ok = rest[..i]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
         let after = rest[i + 4..].trim_start();
         rest = &rest[i + 4..];
         if !before_ok {
             continue;
         }
-        let Some(v) = after.strip_prefix(':').map(str::trim_start) else { continue };
-        let Some(q) = v.chars().next().filter(|c| matches!(c, '\'' | '"' | '`')) else { continue };
+        let Some(v) = after.strip_prefix(':').map(str::trim_start) else {
+            continue;
+        };
+        let Some(q) = v.chars().next().filter(|c| matches!(c, '\'' | '"' | '`')) else {
+            continue;
+        };
         let body = &v[1..];
         let end = body.find(q)?;
         let n = body[..end].trim();
@@ -57,10 +71,18 @@ fn meta_name(script: &str) -> Option<String> {
 
 /// Map one tool call to the capability it exercises: `(kind, normalized id)`.
 fn target(name: &str, input: &Value) -> Option<(CapKind, String)> {
-    let s = |k: &str| input.get(k).and_then(Value::as_str).filter(|v| !v.is_empty());
+    let s = |k: &str| {
+        input
+            .get(k)
+            .and_then(Value::as_str)
+            .filter(|v| !v.is_empty())
+    };
     match name {
         "Skill" => Some((CapKind::Skill, s("skill")?.to_string())),
-        "Agent" | "Task" => Some((CapKind::Agent, s("subagent_type").unwrap_or("general-purpose").to_string())),
+        "Agent" | "Task" => Some((
+            CapKind::Agent,
+            s("subagent_type").unwrap_or("general-purpose").to_string(),
+        )),
         "Workflow" => Some((CapKind::Workflow, workflow_id(input))),
         _ => {
             let server = name.strip_prefix("mcp__")?.split("__").next()?;
@@ -71,7 +93,11 @@ fn target(name: &str, input: &Value) -> Option<(CapKind, String)> {
 
 /// MCP ids are compared in tool-prefix form; everything else verbatim.
 fn key(kind: CapKind, id: &str) -> String {
-    if kind == CapKind::Mcp { normalize(id) } else { id.to_string() }
+    if kind == CapKind::Mcp {
+        normalize(id)
+    } else {
+        id.to_string()
+    }
 }
 
 fn inventory_names(threads: &[&Thread], kind: CapKind) -> Vec<String> {
@@ -93,7 +119,10 @@ fn inventory_names(threads: &[&Thread], kind: CapKind) -> Vec<String> {
     v
 }
 
-fn used_workflows_off_disk(counts: &HashMap<(CapKind, String), (u32, Option<i64>)>, catalog: &Catalog) -> Vec<String> {
+fn used_workflows_off_disk(
+    counts: &HashMap<(CapKind, String), (u32, Option<i64>)>,
+    catalog: &Catalog,
+) -> Vec<String> {
     let mut v: Vec<String> = counts
         .keys()
         .filter(|(k, id)| *k == CapKind::Workflow && !catalog.of(*k).any(|c| &c.id == id))
@@ -111,7 +140,9 @@ fn used_counts(threads: &[&Thread]) -> HashMap<(CapKind, String), (u32, Option<i
             if !seen.insert(id.to_string()) {
                 continue;
             }
-            let Some((k, n)) = target(name, input) else { continue };
+            let Some((k, n)) = target(name, input) else {
+                continue;
+            };
             let e = counts.entry((k, key(k, &n))).or_insert((0, None));
             e.0 += 1;
             e.1 = e.1.max(ts);
@@ -136,12 +167,20 @@ pub fn session_usage(threads: &[&Thread], catalog: &Catalog) -> SessionUsage {
         };
         entries.push((kind, id.to_string(), state));
     };
-    for kind in [CapKind::Skill, CapKind::Agent, CapKind::Mcp, CapKind::Workflow] {
+    for kind in [
+        CapKind::Skill,
+        CapKind::Agent,
+        CapKind::Mcp,
+        CapKind::Workflow,
+    ] {
         let inv = inventory_names(threads, kind);
         for c in catalog.of(kind) {
             emit(kind, &c.id, true, &inv);
         }
-        for n in inv.iter().filter(|n| !catalog.of(kind).any(|c| key(kind, &c.id) == key(kind, n))) {
+        for n in inv
+            .iter()
+            .filter(|n| !catalog.of(kind).any(|c| key(kind, &c.id) == key(kind, n)))
+        {
             emit(kind, n, false, &inv);
         }
         if kind == CapKind::Workflow {
@@ -230,7 +269,11 @@ mod tests {
     }
 
     fn state<'a>(u: &'a SessionUsage, k: CapKind, id: &str) -> &'a UseState {
-        &u.entries.iter().find(|e| e.0 == k && e.1 == id).unwrap_or_else(|| panic!("no {id}")).2
+        &u.entries
+            .iter()
+            .find(|e| e.0 == k && e.1 == id)
+            .unwrap_or_else(|| panic!("no {id}"))
+            .2
     }
 
     #[test]
@@ -250,36 +293,106 @@ mod tests {
         let inv = r#"{"type":"attachment","uuid":"i","attachment":{"type":"mcp_instructions_delta","addedNames":["claude.ai Claude Docs","unused","builtin srv"]}}"#;
         let main = thread(&[
             inv.to_string(),
-            tool_line("1", "2026-11-25T00:00:01.000Z", "Skill", json!({"skill":"brainstorm"})),
-            tool_line("2", "2026-11-25T00:00:03.000Z", "Skill", json!({"skill":"brainstorm"})),
-            tool_line("3", "2026-11-25T00:00:02.000Z", "Agent", json!({"description":"x"})), // default type
-            tool_line("4", "2026-11-25T00:00:04.000Z", "Workflow", json!({"scriptPath":"/p/.claude/workflows/ship.js"})),
-            tool_line("5", "2026-11-25T00:00:05.000Z", "mcp__claude_ai_Claude_Docs__batch", json!({})),
+            tool_line(
+                "1",
+                "2026-11-25T00:00:01.000Z",
+                "Skill",
+                json!({"skill":"brainstorm"}),
+            ),
+            tool_line(
+                "2",
+                "2026-11-25T00:00:03.000Z",
+                "Skill",
+                json!({"skill":"brainstorm"}),
+            ),
+            tool_line(
+                "3",
+                "2026-11-25T00:00:02.000Z",
+                "Agent",
+                json!({"description":"x"}),
+            ), // default type
+            tool_line(
+                "4",
+                "2026-11-25T00:00:04.000Z",
+                "Workflow",
+                json!({"scriptPath":"/p/.claude/workflows/ship.js"}),
+            ),
+            tool_line(
+                "5",
+                "2026-11-25T00:00:05.000Z",
+                "mcp__claude_ai_Claude_Docs__batch",
+                json!({}),
+            ),
         ]);
         let sub = thread(&[
-            tool_line("6", "2026-11-25T00:00:09.000Z", "Agent", json!({"subagent_type":"reviewer"})),
-            tool_line("7", "2026-11-25T00:00:08.000Z", "mcp__plugin_gitlab_gitlab__authenticate", json!({})),
-            tool_line("8", "2026-11-25T00:00:08.000Z", "Skill", json!({"skill":"brainstorm"})),
+            tool_line(
+                "6",
+                "2026-11-25T00:00:09.000Z",
+                "Agent",
+                json!({"subagent_type":"reviewer"}),
+            ),
+            tool_line(
+                "7",
+                "2026-11-25T00:00:08.000Z",
+                "mcp__plugin_gitlab_gitlab__authenticate",
+                json!({}),
+            ),
+            tool_line(
+                "8",
+                "2026-11-25T00:00:08.000Z",
+                "Skill",
+                json!({"skill":"brainstorm"}),
+            ),
         ]);
         let u = session_usage(&[&main, &sub], &catalog);
-        let ts = |s: &str| chrono::DateTime::parse_from_rfc3339(s).unwrap().timestamp_millis();
+        let ts = |s: &str| {
+            chrono::DateTime::parse_from_rfc3339(s)
+                .unwrap()
+                .timestamp_millis()
+        };
         assert_eq!(
             state(&u, Skill, "brainstorm"),
-            &UseState::Used { count: 3, last: Some(ts("2026-11-25T00:00:08.000Z").max(ts("2026-11-25T00:00:03.000Z"))) }
+            &UseState::Used {
+                count: 3,
+                last: Some(ts("2026-11-25T00:00:08.000Z").max(ts("2026-11-25T00:00:03.000Z")))
+            }
         );
-        assert!(matches!(state(&u, Agent, "general-purpose"), UseState::Used { count: 1, .. }));
-        assert!(matches!(state(&u, Agent, "reviewer"), UseState::Used { count: 1, .. }));
-        assert!(matches!(state(&u, Workflow, "ship"), UseState::Used { count: 1, .. }));
-        assert!(matches!(state(&u, Mcp, "claude.ai Claude Docs"), UseState::Used { count: 1, .. }));
-        assert!(matches!(state(&u, Mcp, "plugin:gitlab:gitlab"), UseState::Used { count: 1, .. }));
+        assert!(matches!(
+            state(&u, Agent, "general-purpose"),
+            UseState::Used { count: 1, .. }
+        ));
+        assert!(matches!(
+            state(&u, Agent, "reviewer"),
+            UseState::Used { count: 1, .. }
+        ));
+        assert!(matches!(
+            state(&u, Workflow, "ship"),
+            UseState::Used { count: 1, .. }
+        ));
+        assert!(matches!(
+            state(&u, Mcp, "claude.ai Claude Docs"),
+            UseState::Used { count: 1, .. }
+        ));
+        assert!(matches!(
+            state(&u, Mcp, "plugin:gitlab:gitlab"),
+            UseState::Used { count: 1, .. }
+        ));
         // in inventory, never called
         assert_eq!(state(&u, Mcp, "unused"), &UseState::Available);
         // on disk but the session never announced skills/agents... mcp inventory exists, so:
         // skill inventory is empty -> falls back to "on disk = available"
         assert_eq!(state(&u, Skill, "idle"), &UseState::Available);
-        assert_eq!(state(&u, Agent, "reviewer").clone(), UseState::Used { count: 1, last: Some(ts("2026-11-25T00:00:09.000Z")) });
+        assert_eq!(
+            state(&u, Agent, "reviewer").clone(),
+            UseState::Used {
+                count: 1,
+                last: Some(ts("2026-11-25T00:00:09.000Z"))
+            }
+        );
         // an mcp inventory exists and does not list this one
-        let cat2 = Catalog { items: vec![cap(Mcp, "elsewhere")] };
+        let cat2 = Catalog {
+            items: vec![cap(Mcp, "elsewhere")],
+        };
         let u2 = session_usage(&[&main], &cat2);
         assert_eq!(state(&u2, Mcp, "elsewhere"), &UseState::Unavailable);
         // announced but not on disk -> extra capability with Managed scope
@@ -291,15 +404,37 @@ mod tests {
 
     #[test]
     fn same_event_pushed_twice_counts_once() {
-        let l = tool_line("1", "2026-11-25T00:00:01.000Z", "Skill", json!({"skill":"a"}));
+        let l = tool_line(
+            "1",
+            "2026-11-25T00:00:01.000Z",
+            "Skill",
+            json!({"skill":"a"}),
+        );
         let t = thread(&[l.clone(), l]);
-        let u = session_usage(&[&t], &Catalog { items: vec![cap(Skill, "a")] });
-        assert!(matches!(state(&u, Skill, "a"), UseState::Used { count: 1, .. }));
+        let u = session_usage(
+            &[&t],
+            &Catalog {
+                items: vec![cap(Skill, "a")],
+            },
+        );
+        assert!(matches!(
+            state(&u, Skill, "a"),
+            UseState::Used { count: 1, .. }
+        ));
     }
 
     #[test]
     fn usage_serializes_camel_case() {
-        let u = SessionUsage { entries: vec![(Mcp, "x".into(), UseState::Used { count: 2, last: None })] };
+        let u = SessionUsage {
+            entries: vec![(
+                Mcp,
+                "x".into(),
+                UseState::Used {
+                    count: 2,
+                    last: None,
+                },
+            )],
+        };
         assert_eq!(
             serde_json::to_value(&u).unwrap(),
             json!({"entries":[["mcp","x",{"used":{"count":2,"last":null}}]]})
@@ -310,18 +445,57 @@ mod tests {
     fn workflow_usage_from_real_input_shapes() {
         let inline = "export const meta = { name: 'review-changes', description: 'x' }\nrun()";
         let t = thread(&[
-            tool_line("1", "2026-11-25T00:00:01.000Z", "Workflow", json!({"script": inline})),
-            tool_line("2", "2026-11-25T00:00:02.000Z", "Workflow", json!({"scriptPath":"/p/.claude/workflows/ship.js"})),
-            tool_line("3", "2026-11-25T00:00:03.000Z", "Workflow", json!({"description":"x","script":"export const meta = {\n  description: 'd',\n  name: \"dq\",\n}"})),
-            tool_line("4", "2026-11-25T00:00:04.000Z", "Workflow", json!({"args":{}})),
-            tool_line("5", "2026-11-25T00:00:05.000Z", "Workflow", json!({"script":"const meta = { rename: 'no' }"})),
+            tool_line(
+                "1",
+                "2026-11-25T00:00:01.000Z",
+                "Workflow",
+                json!({"script": inline}),
+            ),
+            tool_line(
+                "2",
+                "2026-11-25T00:00:02.000Z",
+                "Workflow",
+                json!({"scriptPath":"/p/.claude/workflows/ship.js"}),
+            ),
+            tool_line(
+                "3",
+                "2026-11-25T00:00:03.000Z",
+                "Workflow",
+                json!({"description":"x","script":"export const meta = {\n  description: 'd',\n  name: \"dq\",\n}"}),
+            ),
+            tool_line(
+                "4",
+                "2026-11-25T00:00:04.000Z",
+                "Workflow",
+                json!({"args":{}}),
+            ),
+            tool_line(
+                "5",
+                "2026-11-25T00:00:05.000Z",
+                "Workflow",
+                json!({"script":"const meta = { rename: 'no' }"}),
+            ),
         ]);
-        let cat = Catalog { items: vec![cap(Workflow, "ship")] };
+        let cat = Catalog {
+            items: vec![cap(Workflow, "ship")],
+        };
         let u = session_usage(&[&t], &cat);
-        assert!(matches!(state(&u, Workflow, "ship"), UseState::Used { count: 1, .. }));
-        assert!(matches!(state(&u, Workflow, "review-changes"), UseState::Used { count: 1, .. }));
-        assert!(matches!(state(&u, Workflow, "dq"), UseState::Used { count: 1, .. }));
-        assert!(matches!(state(&u, Workflow, "workflow"), UseState::Used { count: 2, .. }));
+        assert!(matches!(
+            state(&u, Workflow, "ship"),
+            UseState::Used { count: 1, .. }
+        ));
+        assert!(matches!(
+            state(&u, Workflow, "review-changes"),
+            UseState::Used { count: 1, .. }
+        ));
+        assert!(matches!(
+            state(&u, Workflow, "dq"),
+            UseState::Used { count: 1, .. }
+        ));
+        assert!(matches!(
+            state(&u, Workflow, "workflow"),
+            UseState::Used { count: 2, .. }
+        ));
         let extra = inventory_only(&[&t], &cat);
         let r = extra.iter().find(|c| c.id == "review-changes").unwrap();
         assert_eq!((r.kind, &r.scope), (Workflow, &Scope::Managed));
@@ -330,9 +504,19 @@ mod tests {
 
     #[test]
     fn plugin_mcp_catalog_id_matches_real_tool_prefix() {
-        let cat = Catalog { items: vec![cap(Mcp, "plugin:gitlab:gitlab")] };
-        let t = thread(&[tool_line("1", "2026-11-25T00:00:01.000Z", "mcp__plugin_gitlab_gitlab__authenticate", json!({}))]);
-        assert!(matches!(state(&session_usage(&[&t], &cat), Mcp, "plugin:gitlab:gitlab"), UseState::Used { count: 1, .. }));
+        let cat = Catalog {
+            items: vec![cap(Mcp, "plugin:gitlab:gitlab")],
+        };
+        let t = thread(&[tool_line(
+            "1",
+            "2026-11-25T00:00:01.000Z",
+            "mcp__plugin_gitlab_gitlab__authenticate",
+            json!({}),
+        )]);
+        assert!(matches!(
+            state(&session_usage(&[&t], &cat), Mcp, "plugin:gitlab:gitlab"),
+            UseState::Used { count: 1, .. }
+        ));
         assert_eq!(normalize("plugin:gitlab:gitlab"), "plugin_gitlab_gitlab");
     }
 }

@@ -5,6 +5,7 @@ pub mod bgtask;
 pub mod catalog;
 pub mod codex;
 pub mod config;
+pub mod control;
 pub mod discovery;
 pub mod event;
 pub mod metrics;

@@ -70,7 +70,11 @@ pub(crate) fn installed(ctx: &ScanCtx) -> Vec<Installed> {
         .iter()
         .filter_map(|(id, entries)| {
             let arr = entries.as_array()?;
-            let project_of = |e: &Value| e.get("projectPath").and_then(|s| s.as_str()).map(PathBuf::from);
+            let project_of = |e: &Value| {
+                e.get("projectPath")
+                    .and_then(|s| s.as_str())
+                    .map(PathBuf::from)
+            };
             let matching = arr.iter().find(|e| match (project_of(e), &ctx.cwd) {
                 (Some(pp), Some(cwd)) => same_path(&pp, cwd),
                 _ => false,
@@ -90,7 +94,10 @@ pub(crate) fn installed(ctx: &ScanCtx) -> Vec<Installed> {
                 id: id.clone(),
                 name: id.split('@').next().unwrap_or(id).to_string(),
                 install_path,
-                version: e.get("version").and_then(|s| s.as_str()).map(str::to_string),
+                version: e
+                    .get("version")
+                    .and_then(|s| s.as_str())
+                    .map(str::to_string),
                 scope,
                 enabled: !not_applicable && enabled.get(id).copied().unwrap_or(false),
                 installs: arr.clone(),
@@ -122,7 +129,9 @@ fn count_entries(dir: &Path, want_dir: bool) -> usize {
 /// Names of MCP servers declared in `<plugin>/.mcp.json` (either
 /// `{"mcpServers": {..}}` or a bare map of servers).
 pub(crate) fn mcp_names(install: &Path) -> Vec<String> {
-    let Some(v) = read_json(&install.join(".mcp.json")) else { return vec![] };
+    let Some(v) = read_json(&install.join(".mcp.json")) else {
+        return vec![];
+    };
     let m = v.get("mcpServers").unwrap_or(&v);
     m.as_object()
         .map(|o| o.keys().cloned().collect())
@@ -130,7 +139,8 @@ pub(crate) fn mcp_names(install: &Path) -> Vec<String> {
 }
 
 fn manifest(install: &Path) -> Option<Value> {
-    read_json(&install.join(".claude-plugin/plugin.json")).or_else(|| read_json(&install.join("plugin.json")))
+    read_json(&install.join(".claude-plugin/plugin.json"))
+        .or_else(|| read_json(&install.join("plugin.json")))
 }
 
 impl Provider for PluginProvider {
@@ -211,7 +221,10 @@ mod tests {
     fn plugin_enabled_flag_project_overrides_user() {
         let t = tempfile::tempdir().unwrap();
         let ctx = fixture(t.path());
-        write(&ctx.claude_home.join("settings.json"), r#"{"enabledPlugins":{"foo@mk":true}}"#);
+        write(
+            &ctx.claude_home.join("settings.json"),
+            r#"{"enabledPlugins":{"foo@mk":true}}"#,
+        );
         let cap = &PluginProvider.scan(&ctx)[0];
         assert!(cap.enabled_globally);
         assert_eq!(cap.id, "foo@mk");
@@ -223,10 +236,16 @@ mod tests {
         );
 
         let proj = ctx.cwd.clone().unwrap();
-        write(&proj.join(".claude/settings.json"), r#"{"enabledPlugins":{"foo@mk":false}}"#);
+        write(
+            &proj.join(".claude/settings.json"),
+            r#"{"enabledPlugins":{"foo@mk":false}}"#,
+        );
         assert!(!PluginProvider.scan(&ctx)[0].enabled_globally);
 
-        write(&proj.join(".claude/settings.local.json"), r#"{"enabledPlugins":{"foo@mk":true}}"#);
+        write(
+            &proj.join(".claude/settings.local.json"),
+            r#"{"enabledPlugins":{"foo@mk":true}}"#,
+        );
         assert!(PluginProvider.scan(&ctx)[0].enabled_globally);
     }
 
@@ -234,7 +253,10 @@ mod tests {
     fn missing_or_malformed_files_yield_nothing() {
         let t = tempfile::tempdir().unwrap();
         let ctx = fixture(t.path());
-        write(&ctx.claude_home.join("plugins/installed_plugins.json"), "{not json");
+        write(
+            &ctx.claude_home.join("plugins/installed_plugins.json"),
+            "{not json",
+        );
         assert!(PluginProvider.scan(&ctx).is_empty());
     }
 
@@ -244,8 +266,16 @@ mod tests {
         let ctx = fixture(t.path());
         let proj = ctx.cwd.clone().unwrap();
         std::fs::create_dir_all(&proj).unwrap();
-        write(&ctx.claude_home.join("settings.json"), r#"{"enabledPlugins":{"foo@mk":true}}"#);
-        let w = |body: &str| write(&ctx.claude_home.join("plugins/installed_plugins.json"), body);
+        write(
+            &ctx.claude_home.join("settings.json"),
+            r#"{"enabledPlugins":{"foo@mk":true}}"#,
+        );
+        let w = |body: &str| {
+            write(
+                &ctx.claude_home.join("plugins/installed_plugins.json"),
+                body,
+            )
+        };
         // user + project (this cwd): project wins
         w(&format!(
             r#"{{"plugins":{{"foo@mk":[{{"scope":"user","installPath":"/u","version":"1"}},{{"scope":"project","installPath":"/p","version":"2","projectPath":"{}"}}]}}}}"#,
@@ -257,12 +287,16 @@ mod tests {
         assert_eq!(cap.meta["installs"].as_array().unwrap().len(), 2);
         assert!(cap.enabled_globally);
         // user + project for ANOTHER repo: user entry
-        w(r#"{"plugins":{"foo@mk":[{"scope":"project","installPath":"/p","version":"2","projectPath":"/other"},{"scope":"user","installPath":"/u","version":"1"}]}}"#);
+        w(
+            r#"{"plugins":{"foo@mk":[{"scope":"project","installPath":"/p","version":"2","projectPath":"/other"},{"scope":"user","installPath":"/u","version":"1"}]}}"#,
+        );
         let cap = &PluginProvider.scan(&ctx)[0];
         assert_eq!(cap.scope, Scope::User);
         assert_eq!(cap.meta["version"], "1");
         // only another project: not applicable
-        w(r#"{"plugins":{"foo@mk":[{"scope":"project","installPath":"/p","version":"2","projectPath":"/other"}]}}"#);
+        w(
+            r#"{"plugins":{"foo@mk":[{"scope":"project","installPath":"/p","version":"2","projectPath":"/other"}]}}"#,
+        );
         let cap = &PluginProvider.scan(&ctx)[0];
         assert!(!cap.enabled_globally);
         assert_eq!(cap.meta["notApplicable"], true);

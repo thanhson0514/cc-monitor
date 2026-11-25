@@ -58,10 +58,15 @@ pub fn parse(md: &str) -> (Map<String, Value>, &str) {
     while i < lines.len() {
         let line = lines[i];
         i += 1;
-        if line.trim().is_empty() || line.trim_start().starts_with('#') || line.starts_with([' ', '\t', '-']) {
+        if line.trim().is_empty()
+            || line.trim_start().starts_with('#')
+            || line.starts_with([' ', '\t', '-'])
+        {
             continue;
         }
-        let Some((k, v)) = line.split_once(':') else { continue };
+        let Some((k, v)) = line.split_once(':') else {
+            continue;
+        };
         let key = k.trim().to_string();
         let v = v.trim();
         let is_block = matches!(v, ">" | "|" | ">-" | "|-" | ">+" | "|+");
@@ -96,7 +101,10 @@ pub fn parse(md: &str) -> (Map<String, Value>, &str) {
             }
         } else {
             let mut text = v.to_string();
-            while i < lines.len() && lines[i].starts_with([' ', '\t']) && !lines[i].trim().is_empty() {
+            while i < lines.len()
+                && lines[i].starts_with([' ', '\t'])
+                && !lines[i].trim().is_empty()
+            {
                 text.push(' ');
                 text.push_str(lines[i].trim());
                 i += 1;

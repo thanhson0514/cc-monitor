@@ -9,7 +9,9 @@ pub struct McpProvider;
 /// Claude Code turns every non-alphanumeric char of a server name into `_`
 /// when it builds tool names (`mcp__<server>__<tool>`); compare in this form.
 pub fn normalize(name: &str) -> String {
-    name.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect()
+    name.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
 }
 
 fn read_json(p: &Path) -> Option<Value> {
@@ -51,11 +53,23 @@ fn servers(v: Option<&Value>) -> Vec<(String, Value)> {
 
 fn names(v: Option<&Value>) -> Vec<String> {
     v.and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
-fn push(out: &mut Vec<Capability>, id: String, scope: Scope, path: &Path, enabled: bool, cfg: &Value) {
+fn push(
+    out: &mut Vec<Capability>,
+    id: String,
+    scope: Scope,
+    path: &Path,
+    enabled: bool,
+    cfg: &Value,
+) {
     // later (more specific) sources replace earlier ones of the same name
     out.retain(|c| c.id != id);
     out.push(Capability {
@@ -131,21 +145,41 @@ mod tests {
                 p = cwd.display()
             ),
         );
-        write(&cwd.join(".mcp.json"), r#"{"mcpServers":{"on":{"command":"a"},"off":{"command":"b"}}}"#);
-        write(&inst.join(".mcp.json"), r#"{"gitlab":{"type":"http","url":"https://gl"}}"#);
+        write(
+            &cwd.join(".mcp.json"),
+            r#"{"mcpServers":{"on":{"command":"a"},"off":{"command":"b"}}}"#,
+        );
+        write(
+            &inst.join(".mcp.json"),
+            r#"{"gitlab":{"type":"http","url":"https://gl"}}"#,
+        );
         write(
             &home.join("plugins/installed_plugins.json"),
-            &format!(r#"{{"plugins":{{"gitlab@mk":[{{"scope":"user","installPath":"{}"}}]}}}}"#, inst.display()),
+            &format!(
+                r#"{{"plugins":{{"gitlab@mk":[{{"scope":"user","installPath":"{}"}}]}}}}"#,
+                inst.display()
+            ),
         );
-        write(&home.join("settings.json"), r#"{"enabledPlugins":{"gitlab@mk":true}}"#);
-        ScanCtx { claude_home: home, claude_json: root.join("home/.claude.json"), cwd: Some(cwd) }
+        write(
+            &home.join("settings.json"),
+            r#"{"enabledPlugins":{"gitlab@mk":true}}"#,
+        );
+        ScanCtx {
+            claude_home: home,
+            claude_json: root.join("home/.claude.json"),
+            cwd: Some(cwd),
+        }
     }
 
     #[test]
     fn mcp_merges_user_project_and_mcp_json_with_disabled_list() {
         let t = tempfile::tempdir().unwrap();
         let caps = McpProvider.scan(&ctx(t.path()));
-        let get = |id: &str| caps.iter().find(|c| c.id == id).unwrap_or_else(|| panic!("missing {id}"));
+        let get = |id: &str| {
+            caps.iter()
+                .find(|c| c.id == id)
+                .unwrap_or_else(|| panic!("missing {id}"))
+        };
         assert_eq!(get("codegraph").scope, Scope::User);
         assert_eq!(get("codegraph").meta["transport"], "stdio");
         assert_eq!(get("local").scope, Scope::Project);
@@ -156,7 +190,10 @@ mod tests {
         assert!(get("on").enabled_globally);
         assert!(!get("off").enabled_globally);
         assert_eq!(get("on").scope, Scope::Project);
-        assert_eq!(get("plugin:gitlab:gitlab").scope, Scope::Plugin("gitlab@mk".into()));
+        assert_eq!(
+            get("plugin:gitlab:gitlab").scope,
+            Scope::Plugin("gitlab@mk".into())
+        );
         // secrets (args, env, url query) are not copied
         let all = serde_json::to_string(&caps).unwrap();
         assert!(!all.contains("SECRET"), "{all}");

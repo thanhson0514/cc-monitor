@@ -96,7 +96,12 @@ impl InventoryDelta {
 fn str_list(a: &Value, key: &str) -> Vec<String> {
     a.get(key)
         .and_then(Value::as_array)
-        .map(|v| v.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .map(|v| {
+            v.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -358,9 +363,14 @@ fn attachment_event(line: &str, head: &Head) -> Option<Event> {
         }
     }
     let head_bytes = &line.as_bytes()[..line.len().min(4096)];
-    if ["skill_listing", "mcp_instructions_delta", "agent_listing_delta", "deferred_tools_delta"]
-        .iter()
-        .any(|t| line.contains(t))
+    if [
+        "skill_listing",
+        "mcp_instructions_delta",
+        "agent_listing_delta",
+        "deferred_tools_delta",
+    ]
+    .iter()
+    .any(|t| line.contains(t))
     {
         if let Ok(raw) = serde_json::from_str::<Raw>(line) {
             if let Some(d) = raw.attachment.as_ref().and_then(inventory_of) {
@@ -810,23 +820,38 @@ mod tests {
     #[test]
     fn parses_inventory_attachments() {
         let mk = |att: &str| {
-            let l = format!(r#"{{"type":"attachment","uuid":"u","parentUuid":"p","attachment":{att}}}"#);
+            let l = format!(
+                r#"{{"type":"attachment","uuid":"u","parentUuid":"p","attachment":{att}}}"#
+            );
             parse_line(&l).unwrap()
         };
         let Kind::Inventory(d) = mk(r#"{"type":"skill_listing","content":"- agent-browser: Browser x: y\n- foo:bar: d\nnoise\n- bare"}"#).kind else {
             panic!()
         };
         assert_eq!(d.skills, ["agent-browser", "foo:bar", "bare"]);
-        let e = mk(r#"{"type":"mcp_instructions_delta","addedNames":["cde","claude.ai Claude Docs"],"removedNames":["old"]}"#);
+        let e = mk(
+            r#"{"type":"mcp_instructions_delta","addedNames":["cde","claude.ai Claude Docs"],"removedNames":["old"]}"#,
+        );
         assert_eq!(e.parent.as_deref(), Some("p"));
         let Kind::Inventory(d) = e.kind else { panic!() };
         assert_eq!(d.mcp, ["cde", "claude.ai Claude Docs"]);
         assert_eq!(d.removed.unwrap().mcp, ["old"]);
-        let Kind::Inventory(d) = mk(r#"{"type":"agent_listing_delta","addedTypes":["Explore"]}"#).kind else { panic!() };
+        let Kind::Inventory(d) =
+            mk(r#"{"type":"agent_listing_delta","addedTypes":["Explore"]}"#).kind
+        else {
+            panic!()
+        };
         assert_eq!(d.agents, ["Explore"]);
-        let Kind::Inventory(d) = mk(r#"{"type":"deferred_tools_delta","addedNames":["mcp__a__b"]}"#).kind else { panic!() };
+        let Kind::Inventory(d) =
+            mk(r#"{"type":"deferred_tools_delta","addedNames":["mcp__a__b"]}"#).kind
+        else {
+            panic!()
+        };
         assert_eq!(d.deferred_tools, ["mcp__a__b"]);
         // malformed field types do not panic
-        assert!(matches!(mk(r#"{"type":"agent_listing_delta","addedTypes":5}"#).kind, Kind::Inventory(_)));
+        assert!(matches!(
+            mk(r#"{"type":"agent_listing_delta","addedTypes":5}"#).kind,
+            Kind::Inventory(_)
+        ));
     }
 }

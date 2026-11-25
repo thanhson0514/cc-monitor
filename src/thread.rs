@@ -129,7 +129,11 @@ fn merge_inventory(into: &mut InventoryDelta, d: &InventoryDelta) {
     merge_list(&mut into.skills, &d.skills, &r.skills);
     merge_list(&mut into.mcp, &d.mcp, &r.mcp);
     merge_list(&mut into.agents, &d.agents, &r.agents);
-    merge_list(&mut into.deferred_tools, &d.deferred_tools, &r.deferred_tools);
+    merge_list(
+        &mut into.deferred_tools,
+        &d.deferred_tools,
+        &r.deferred_tools,
+    );
 }
 
 /// A file the user supplied: pasted image, `@` mention of a file or directory.
@@ -206,7 +210,11 @@ impl Thread {
             Kind::System { subtype, .. } if subtype == "compact_boundary" => self.compactions += 1,
             Kind::Inventory(d) => {
                 // Replayed lines (same uuid) must not re-add what a later line removed.
-                if ev.uuid.as_ref().is_none_or(|u| self.inventory_seen.insert(u.clone())) {
+                if ev
+                    .uuid
+                    .as_ref()
+                    .is_none_or(|u| self.inventory_seen.insert(u.clone()))
+                {
                     merge_inventory(&mut self.inventory, d);
                 }
             }
@@ -1040,14 +1048,33 @@ mod tests {
     #[test]
     fn inventory_delta_accumulates_and_removes() {
         let att = |u: &str, p: &str, body: &str| {
-            format!(r#"{{"type":"attachment","uuid":"{u}","parentUuid":"{p}","attachment":{body}}}"#)
+            format!(
+                r#"{{"type":"attachment","uuid":"{u}","parentUuid":"{p}","attachment":{body}}}"#
+            )
         };
-        let l1 = att("I1", "A", r#"{"type":"mcp_instructions_delta","addedNames":["cde","gh"]}"#);
-        let l2 = att("I2", "I1", r#"{"type":"mcp_instructions_delta","addedNames":["x"],"removedNames":["cde"]}"#);
-        let l3 = att("I3", "I2", r#"{"type":"agent_listing_delta","addedTypes":["Explore"]}"#);
-        let l4 = att("I4", "I3", r#"{"type":"skill_listing","content":"- s1: d\n- s2: d"}"#);
+        let l1 = att(
+            "I1",
+            "A",
+            r#"{"type":"mcp_instructions_delta","addedNames":["cde","gh"]}"#,
+        );
+        let l2 = att(
+            "I2",
+            "I1",
+            r#"{"type":"mcp_instructions_delta","addedNames":["x"],"removedNames":["cde"]}"#,
+        );
+        let l3 = att(
+            "I3",
+            "I2",
+            r#"{"type":"agent_listing_delta","addedTypes":["Explore"]}"#,
+        );
+        let l4 = att(
+            "I4",
+            "I3",
+            r#"{"type":"skill_listing","content":"- s1: d\n- s2: d"}"#,
+        );
         let a = r#"{"type":"user","uuid":"A","message":{"content":"a"}}"#.to_string();
-        let b = r#"{"type":"user","uuid":"B","parentUuid":"I4","message":{"content":"b"}}"#.to_string();
+        let b =
+            r#"{"type":"user","uuid":"B","parentUuid":"I4","message":{"content":"b"}}"#.to_string();
         let mut t = thread(&[&a, &l1, &l2, &l1, &l3, &l4, &b]); // l1 replayed after l2 removed "cde"
         let inv = t.inventory();
         assert_eq!(inv.mcp, ["gh", "x"]);

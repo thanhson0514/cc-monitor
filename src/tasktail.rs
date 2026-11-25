@@ -80,7 +80,11 @@ pub fn tail_task_output(path: &Path, max: u64) -> TaskTail {
     let truncated = start > 0;
     if truncated {
         // Drop a UTF-8 character cut in half at the start.
-        let skip = buf.iter().take(3).take_while(|b| (**b & 0xC0) == 0x80).count();
+        let skip = buf
+            .iter()
+            .take(3)
+            .take_while(|b| (**b & 0xC0) == 0x80)
+            .count();
         buf.drain(..skip);
     }
     TaskTail {
@@ -145,7 +149,12 @@ mod tests {
             std::os::unix::fs::symlink("/etc/passwd", &link).unwrap();
             assert!(tail_task_output(&link, TAIL_MAX).gone);
         }
-        let dots = d.join("..").join("..").join("..").join("etc").join("passwd");
+        let dots = d
+            .join("..")
+            .join("..")
+            .join("..")
+            .join("etc")
+            .join("passwd");
         assert!(!is_task_output_path(&dots));
     }
 }

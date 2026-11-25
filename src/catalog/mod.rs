@@ -111,6 +111,9 @@ mod shape_tests {
         assert_eq!(j(Scope::Project), serde_json::json!("project"));
         assert_eq!(j(Scope::BuiltIn), serde_json::json!("builtIn"));
         assert_eq!(j(Scope::Managed), serde_json::json!("managed"));
-        assert_eq!(j(Scope::Plugin("x".into())), serde_json::json!({"plugin": "x"}));
+        assert_eq!(
+            j(Scope::Plugin("x".into())),
+            serde_json::json!({"plugin": "x"})
+        );
     }
 }
