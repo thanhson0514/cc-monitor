@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
+pub mod runner;
 pub mod state;
 
 /// Per-session launch overlay. Ids: skills = catalog skill id (`name` or
