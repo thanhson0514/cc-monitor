@@ -413,6 +413,20 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .cmp-row { display: flex; gap: 8px; align-items: stretch; }
 .cmp-input { flex: 1; min-width: 0; resize: vertical; min-height: 44px; max-height: 40vh; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 8px 10px; font: inherit; font-size: 13px; line-height: 1.45; }
 .cmp-input:focus { outline: none; border-color: #333a66; }
+/* Mention highlight: a backdrop with identical box/font behind a transparent-text textarea. */
+.cmp-field { position: relative; flex: 1; min-width: 0; display: flex; }
+.cmp-field .cmp-text { flex: 1; width: 100%; position: relative; z-index: 1; background: transparent; color: transparent; caret-color: var(--text); }
+.cmp-field .cmp-text::placeholder { color: var(--muted); }
+.cmp-field .cmp-text::selection { color: transparent; background: rgba(142, 162, 255, .3); }
+.cmp-backdrop { position: absolute; top: 0; left: 0; right: 0; z-index: 0; overflow: hidden; resize: none; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; pointer-events: none; color: var(--text); }
+.cmp-field:focus-within .cmp-backdrop { border-color: #333a66; }
+.cmp-field.disabled .cmp-backdrop { opacity: .6; }
+.cmp-mention { color: var(--accent); background: rgba(142, 162, 255, .2); border-radius: 3px; box-shadow: 0 0 0 1.5px rgba(142, 162, 255, .2); font: inherit; padding: 0; margin: 0; }
+.cmp-mentions { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11.5px; }
+.cmp-mention-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 4px 1px 8px; border-radius: 999px; background: rgba(142, 162, 255, .14); color: var(--accent); border: 1px solid #333a66; }
+.cmp-mention-k { color: var(--muted); }
+.cmp-mention-x { width: 16px; height: 16px; line-height: 14px; border-radius: 50%; color: var(--muted); font-size: 13px; padding: 0; }
+.cmp-mention-x:hover:not(:disabled) { background: #232744; color: var(--text); }
 .cmp-input:disabled { opacity: .6; cursor: not-allowed; }
 .cmp-row .btn { flex: none; align-self: flex-end; }
 .cmp-stop { color: var(--red); border-color: #5a2a2a; }

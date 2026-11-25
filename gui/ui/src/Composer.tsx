@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { AgentItem, api, CapKind, Capability, capDisabled, ControlDto, EMPTY_OVERLAY, isBusy, Overlay, RunState, toggleCap } from './api';
+import { atomicDeleteRange, buildSendText, mentionsIn, mentionToken, removeMention, segments } from './mentions';
 
 const PERMISSION_MODES: [string, string][] = [
     ['default', 'default'],
@@ -173,6 +174,7 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
     const writes = useRef<Promise<void>>(Promise.resolve());
     const writeSeq = useRef(0);
     const input = useRef<HTMLTextAreaElement>(null);
+    const backdrop = useRef<HTMLDivElement>(null);
     const [agents, setAgents] = useState<AgentItem[]>([]);
     const [at, setAt] = useState<{ start: number; q: string } | null>(null);
     const [atIdx, setAtIdx] = useState(0);
@@ -246,9 +248,9 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
     };
 
     const send = () => {
-        const t = text.trim();
-        if (!t || sending || locked || busy || !dto) return;
+        if (!text.trim() || sending || locked || busy || !dto) return;
         if (!sid && !cwd) return;
+        const t = buildSendText(text, agentIds);
         setSending(true);
         setErr(null);
         api.sendPrompt(sid, cwd ?? '', t, sid ? null : overlay)
@@ -269,21 +271,18 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
     };
 
     const usable = usableAgents(agents, overlay);
+    const agentIds = useMemo(() => new Set(usable.map((a) => a.id)), [usable.map((a) => a.id).join('\n')]);
+    const segs = useMemo(() => segments(text, agentIds), [text, agentIds]);
+    const mentioned = useMemo(() => mentionsIn(text, agentIds), [text, agentIds]);
     const atList = at ? usable.filter((a) => a.id.toLowerCase().includes(at.q.toLowerCase())).slice(0, 8) : [];
     const syncAt = (value: string, caret: number) => {
         const q = atQuery(value, caret);
         setAt(q);
         setAtIdx(0);
     };
-    /** Replace `@query` with a manual reference to the agent. */
-    const pickAgent = (a: AgentItem) => {
-        if (!at) return;
-        const caret = at.start + 1 + at.q.length;
-        const ins = `Dùng agent ${a.id} để `;
-        const next = text.slice(0, at.start) + ins + text.slice(caret);
+    /** Set the text and put the caret at `pos` once React has rendered it. */
+    const setTextAt = (next: string, pos: number) => {
         setText(next);
-        setAt(null);
-        const pos = at.start + ins.length;
         requestAnimationFrame(() => {
             const el = input.current;
             if (el) {
@@ -292,6 +291,42 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
             }
         });
     };
+    /** Replace `@query` with the mention token `@id `. */
+    const pickAgent = (a: AgentItem) => {
+        if (!at) return;
+        const caret = at.start + 1 + at.q.length;
+        const ins = mentionToken(a.id);
+        // Typed a space already? Do not double it.
+        const rest = text.slice(caret);
+        const next = text.slice(0, at.start) + ins + (rest.startsWith(' ') ? rest.slice(1) : rest);
+        setAt(null);
+        setTextAt(next, at.start + ins.length);
+    };
+    const dropMention = (id: string) => {
+        const next = removeMention(text, id, agentIds);
+        setTextAt(next, next.length);
+    };
+
+    /** Keep the highlight layer on the textarea's scroll offset and text width (scrollbar). */
+    const syncBackdrop = useCallback(() => {
+        const el = input.current;
+        const b = backdrop.current;
+        if (!el || !b) return;
+        const cs = getComputedStyle(el);
+        const borders = parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+        b.style.right = `${Math.max(0, el.offsetWidth - el.clientWidth - borders)}px`;
+        b.style.height = `${el.offsetHeight}px`;
+        b.scrollTop = el.scrollTop;
+        b.scrollLeft = el.scrollLeft;
+    }, []);
+    useEffect(syncBackdrop, [text, syncBackdrop]);
+    useEffect(() => {
+        const el = input.current;
+        if (!el || typeof ResizeObserver === 'undefined') return;
+        const ro = new ResizeObserver(syncBackdrop);
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [syncBackdrop]);
 
     const pm = overlay.permissionMode ?? 'default';
     const exited = runState?.kind === 'exited' && (runState.code ?? 0) !== 0 && runState.stderrTail.trim() ? runState : null;
@@ -332,43 +367,71 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
                 </div>
             )}
             <div className="cmp-row">
-                <textarea
-                    ref={input}
-                    className="cmp-input"
-                    rows={2}
-                    value={text}
-                    disabled={locked || sending}
-                    placeholder={placeholder}
-                    onChange={(e) => {
-                        setText(e.target.value);
-                        syncAt(e.target.value, e.target.selectionStart ?? e.target.value.length);
-                    }}
-                    onBlur={() => setAt(null)}
-                    onKeyDown={(e) => {
-                        if (at && atList.length > 0) {
-                            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                                e.preventDefault();
-                                const d = e.key === 'ArrowDown' ? 1 : -1;
-                                setAtIdx((i) => (i + d + atList.length) % atList.length);
-                                return;
+                <div className={`cmp-field ${locked || sending ? 'disabled' : ''}`}>
+                    <div ref={backdrop} className="cmp-input cmp-backdrop" aria-hidden="true">
+                        {segs.map((g, i) =>
+                            g.mention ? (
+                                <mark key={i} className="cmp-mention">
+                                    {g.text}
+                                </mark>
+                            ) : (
+                                <span key={i}>{g.text}</span>
+                            )
+                        )}
+                        {/* A trailing newline needs a character after it to take up a line, as in the textarea. */}
+                        {text.endsWith('\n') || text === '' ? '\u200b' : null}
+                    </div>
+                    <textarea
+                        ref={input}
+                        className="cmp-input cmp-text"
+                        spellCheck={false}
+                        rows={2}
+                        value={text}
+                        disabled={locked || sending}
+                        placeholder={placeholder}
+                        onChange={(e) => {
+                            setText(e.target.value);
+                            syncAt(e.target.value, e.target.selectionStart ?? e.target.value.length);
+                        }}
+                        onBlur={() => setAt(null)}
+                        onScroll={syncBackdrop}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Backspace' && !e.nativeEvent.isComposing) {
+                                const el = e.currentTarget;
+                                const r = atomicDeleteRange(text, el.selectionStart, el.selectionEnd, agentIds);
+                                if (r) {
+                                    e.preventDefault();
+                                    const next = text.slice(0, r[0]) + text.slice(r[1]);
+                                    setAt(null);
+                                    setTextAt(next, r[0]);
+                                    return;
+                                }
                             }
-                            if ((e.key === 'Enter' || e.key === 'Tab') && !e.nativeEvent.isComposing) {
-                                e.preventDefault();
-                                pickAgent(atList[Math.min(atIdx, atList.length - 1)]);
-                                return;
+                            if (at && atList.length > 0) {
+                                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    const d = e.key === 'ArrowDown' ? 1 : -1;
+                                    setAtIdx((i) => (i + d + atList.length) % atList.length);
+                                    return;
+                                }
+                                if ((e.key === 'Enter' || e.key === 'Tab') && !e.nativeEvent.isComposing) {
+                                    e.preventDefault();
+                                    pickAgent(atList[Math.min(atIdx, atList.length - 1)]);
+                                    return;
+                                }
+                                if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    setAt(null);
+                                    return;
+                                }
                             }
-                            if (e.key === 'Escape') {
+                            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                                 e.preventDefault();
-                                setAt(null);
-                                return;
+                                send();
                             }
-                        }
-                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                            e.preventDefault();
-                            send();
-                        }
-                    }}
-                />
+                        }}
+                    />
+                </div>
                 {busy && sid ? (
                     <button type="button" className="btn cmp-stop" onClick={interrupt} title="Dừng lượt đang chạy">
                         Dừng
@@ -379,6 +442,18 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
                     </button>
                 )}
             </div>
+            {mentioned.length > 0 && (
+                <div className="cmp-mentions" aria-label="Agent được tham chiếu">
+                    {mentioned.map((id) => (
+                        <span key={id} className="cmp-mention-chip">
+                            <span className="cmp-mention-k">Agent:</span> {id}
+                            <button type="button" className="cmp-mention-x" title={`Bỏ tham chiếu @${id}`} onClick={() => dropMention(id)} disabled={locked || sending}>
+                                ×
+                            </button>
+                        </span>
+                    ))}
+                </div>
+            )}
             <div className="cmp-chips">
                 <select
                     className="cmp-chip"
