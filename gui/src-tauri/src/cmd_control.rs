@@ -10,6 +10,7 @@ use cc_monitor::control::runner::{ControlError, Manager as CtlManager, RunState}
 use cc_monitor::control::state::{self, effective};
 use cc_monitor::control::{find_claude, Overlay, Registry};
 use cc_monitor::discovery::{self, LiveInfo, Pinned};
+use cc_monitor::metrics::model_label;
 use cc_monitor::store::Store;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -38,6 +39,8 @@ pub struct ControlDto {
     /// "liveElsewhere" | "claudeNotFound"
     pub reason: Option<&'static str>,
     pub models: Vec<String>,
+    /// Display label per `models` entry (status-bar formatting: `Opus 5.5`).
+    pub model_labels: Vec<String>,
     pub efforts: Vec<String>,
     /// Saved overlay differs from the one the running process was launched
     /// with: it applies from the next turn (restart between turns).
@@ -87,12 +90,14 @@ pub fn control_dto(i: DtoInputs) -> ControlDto {
     let pending = alive
         && i.launched
             .is_some_and(|l| *l != effective(&i.overlay, i.registry));
+    let models = model_list(i.seen_models.iter().map(String::as_str));
     ControlDto {
+        model_labels: models.iter().map(|m| model_label(m)).collect(),
+        models,
         overlay: i.overlay,
         run_state: i.run_state,
         can_control: reason.is_none(),
         reason,
-        models: model_list(i.seen_models.iter().map(String::as_str)),
         efforts: EFFORTS.map(String::from).to_vec(),
         pending,
         registry_agents: i.registry.disabled_agents.iter().cloned().collect(),
@@ -651,6 +656,23 @@ mod tests {
             let back = h.join().unwrap();
             assert!(back.model.is_some());
         }
+    }
+
+    #[test]
+    fn model_labels_match_status_bar_formatter() {
+        let reg = Registry::default();
+        let d = control_dto(DtoInputs {
+            seen_models: vec!["claude-opus-5-5".into()],
+            ..inputs(&reg)
+        });
+        assert_eq!(d.models.len(), d.model_labels.len());
+        let i = d
+            .models
+            .iter()
+            .position(|m| m == "claude-opus-5-5")
+            .unwrap();
+        assert_eq!(d.model_labels[i], "Opus 5.5");
+        assert_eq!(d.model_labels[0], d.models[0]); // aliases stay as typed
     }
 
     #[test]

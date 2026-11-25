@@ -271,7 +271,7 @@ function StatusBar({ s }: { s: StatusInfo | null }) {
     return (
         <footer className="statusbar">
             <div className="sb-group">
-                <span className="sb-chip sb-model" title="Model">
+                <span className="sb-chip sb-model" title={s.nodeSub ? 'Model của subagent đang chọn' : 'Model'}>
                     {s.model ?? '—'}
                 </span>
                 {s.effort && (
@@ -647,7 +647,11 @@ export default function App() {
         api.openSession(sid);
     };
 
-    const composerSid = starting ? starting.sid : row && row.kind === 'main' && row.tool !== 'codex' ? row.key.slice(2) : null;
+    // The Composer stays under a session's subagent threads too (it always talks to
+    // the main session); its model/effort chips then show the selected subagent's.
+    const rowSid = row && row.kind !== 'workflow' ? row.key.split(':')[1] ?? null : null;
+    const mainRow = rowSid ? rows.find((r) => r.key === `m:${rowSid}`) : undefined;
+    const composerSid = starting ? starting.sid : mainRow && mainRow.tool !== 'codex' ? rowSid : null;
     /** Session id the Library/Agents pages and side panels should follow. */
     const pageSid = starting ? starting.sid : selected ? selected.split(':')[1] ?? null : null;
     const panelKey = starting ? null : selected;
@@ -792,7 +796,7 @@ export default function App() {
                 {newCwd ? (
                     <Composer key={`new:${newCwd}`} sid={null} cwd={newCwd} onStarted={started} />
                 ) : (
-                    composerSid && <Composer key={composerSid} sid={composerSid} cwd={starting ? starting.cwd : null} />
+                    composerSid && <Composer key={composerSid} sid={composerSid} cwd={starting ? starting.cwd : null} current={status} />
                 )}
                 <StatusBar s={status} />
             </main>

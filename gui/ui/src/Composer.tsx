@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { AgentItem, api, CapKind, Capability, capDisabled, ControlDto, EMPTY_OVERLAY, isBusy, Overlay, RunState, toggleCap } from './api';
+import { AgentItem, api, CapKind, Capability, capDisabled, ControlDto, EMPTY_OVERLAY, isBusy, Overlay, RunState, StatusInfo, toggleCap } from './api';
 import { atomicDeleteRange, buildSendText, mentionsIn, mentionToken, removeMention, segments } from './mentions';
 
 const PERMISSION_MODES: [string, string][] = [
@@ -158,11 +158,38 @@ function usableAgents(list: AgentItem[], o: Overlay): AgentItem[] {
     );
 }
 
+/** Label for a model id/alias: the status-bar formatting Rust sends with the list. */
+function modelLabel(m: string, dto: ControlDto | null, cur: StatusInfo | null): string {
+    if (cur?.modelId === m && cur.model) return cur.model;
+    const i = dto?.models.indexOf(m) ?? -1;
+    return i >= 0 ? dto?.modelLabels[i] ?? m : m;
+}
+
+/**
+ * The "no override" option: shows the current value while it is selected, and
+ * reads "mặc định (…)" in the list while an explicit override is chosen.
+ */
+function inheritLabel(what: string, explicit: string | null, current: string | null, sub: boolean): string {
+    if (!current) return `${what}: mặc định`;
+    return explicit ? `${what}: mặc định (${current})` : `${what}: ${current} · ${sub ? 'subagent' : 'hiện tại'}`;
+}
+
 /**
  * Prompt input under the chat. `sid = null`: new session in `cwd` (overlay kept
  * locally until the first send, then stored for the new session).
  */
-export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: string | null; onStarted?: (sid: string) => void }) {
+export function Composer({
+    sid,
+    cwd,
+    current = null,
+    onStarted
+}: {
+    sid: string | null;
+    cwd: string | null;
+    /** Status of the selected node (`get_status`): the session's current model/effort. */
+    current?: StatusInfo | null;
+    onStarted?: (sid: string) => void;
+}) {
     const [dto, setDto] = useState<ControlDto | null>(null);
     const [draft, setDraft] = useState<Overlay | null>(null);
     const [text, setText] = useState('');
@@ -328,6 +355,29 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
         return () => ro.disconnect();
     }, [syncBackdrop]);
 
+    // Model/effort chips: an explicit overlay value wins; otherwise the selected
+    // node's current value (same source as the status bar), marked "hiện tại".
+    const cur = sid ? current : null;
+    const curModelId = cur?.modelId ?? null;
+    const curModel = cur?.model ?? null;
+    const curEffort = cur?.effort ?? null;
+    const subNote = cur?.nodeSub
+        ? ' Đang xem subagent: giá trị "hiện tại" là của subagent này (chỉ để xem); lựa chọn ở đây áp dụng cho lượt tiếp theo của session chính.'
+        : '';
+    const modelOpts = [...(dto?.models ?? [])];
+    if (curModelId && !modelOpts.includes(curModelId)) modelOpts.push(curModelId);
+    if (overlay.model && !modelOpts.includes(overlay.model)) modelOpts.push(overlay.model);
+    const modelTitle = overlay.model
+        ? `Model đã chọn cho các lượt sau: ${modelLabel(overlay.model, dto, cur)}. Chọn "mặc định" để bỏ.${subNote}`
+        : curModel
+          ? `Đang dùng ${curModel} (hiện tại, theo transcript). Chọn model khác cho các lượt sau.${subNote}`
+          : 'Model cho các lượt sau';
+    const effortTitle = overlay.effort
+        ? `Mức suy nghĩ đã chọn cho các lượt sau: ${overlay.effort}. Chọn "mặc định" để bỏ.${subNote}`
+        : curEffort
+          ? `Đang dùng effort ${curEffort} (hiện tại). Chọn mức khác cho các lượt sau.${subNote}`
+          : 'Mức suy nghĩ (effort) cho các lượt sau';
+
     const pm = overlay.permissionMode ?? 'default';
     const exited = runState?.kind === 'exited' && (runState.code ?? 0) !== 0 && runState.stderrTail.trim() ? runState : null;
     const lockText = locked ? LOCK_REASON[dto?.reason ?? ''] ?? 'Không điều khiển được session này' : null;
@@ -456,28 +506,27 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
             )}
             <div className="cmp-chips">
                 <select
-                    className="cmp-chip"
+                    className={`cmp-chip ${overlay.model ? 'on' : curModel ? 'cur' : ''}`}
                     value={overlay.model ?? ''}
                     disabled={locked}
-                    title="Model cho các lượt sau"
+                    title={modelTitle}
                     onChange={(e) => update({ ...overlay, model: e.target.value || null })}
                 >
-                    <option value="">model: mặc định</option>
-                    {(dto?.models ?? []).map((m) => (
+                    <option value="">{inheritLabel('model', overlay.model, curModel, !!cur?.nodeSub)}</option>
+                    {modelOpts.map((m) => (
                         <option key={m} value={m}>
-                            model: {m}
+                            model: {modelLabel(m, dto, cur)}
                         </option>
                     ))}
-                    {overlay.model && !(dto?.models ?? []).includes(overlay.model) && <option value={overlay.model}>model: {overlay.model}</option>}
                 </select>
                 <select
-                    className="cmp-chip"
+                    className={`cmp-chip ${overlay.effort ? 'on' : curEffort ? 'cur' : ''}`}
                     value={overlay.effort ?? ''}
                     disabled={locked}
-                    title="Mức suy nghĩ (effort). Transcript không ghi lại giá trị này — chip hiện giá trị ccmon truyền vào."
+                    title={effortTitle}
                     onChange={(e) => update({ ...overlay, effort: e.target.value || null })}
                 >
-                    <option value="">effort: mặc định</option>
+                    <option value="">{inheritLabel('effort', overlay.effort, curEffort, !!cur?.nodeSub)}</option>
                     {(dto?.efforts ?? []).map((m) => (
                         <option key={m} value={m}>
                             effort: {m}

@@ -83,7 +83,12 @@ export interface ThreadView {
 }
 
 export interface StatusInfo {
+    /** Model label of the selected node (subagent's own, else the session's). */
     model: string | null;
+    /** Raw model id behind `model` (e.g. `claude-opus-5-5`). */
+    modelId: string | null;
+    /** `model` / `effort` come from the selected subagent thread. */
+    nodeSub: boolean;
     ctx: number | null;
     win: number | null;
     winEstimated: boolean;
@@ -291,6 +296,8 @@ export interface ControlDto {
     canControl: boolean;
     reason: 'liveElsewhere' | 'claudeNotFound' | null;
     models: string[];
+    /** Display label per `models` entry (same formatting as the status bar). */
+    modelLabels: string[];
     efforts: string[];
     pending: boolean;
     registryAgents: string[];

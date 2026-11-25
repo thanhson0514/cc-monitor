@@ -427,6 +427,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .cmp-mention-k { color: var(--muted); }
 .cmp-mention-x { width: 16px; height: 16px; line-height: 14px; border-radius: 50%; color: var(--muted); font-size: 13px; padding: 0; }
 .cmp-mention-x:hover:not(:disabled) { background: #232744; color: var(--text); }
+.cmp-chip.cur { color: var(--muted); border-style: dashed; }
 .cmp-input:disabled { opacity: .6; cursor: not-allowed; }
 .cmp-row .btn { flex: none; align-self: flex-end; }
 .cmp-stop { color: var(--red); border-color: #5a2a2a; }

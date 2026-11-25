@@ -297,7 +297,12 @@ struct ThreadDto {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct StatusDto {
+    /// Model label of the selected node (subagent's own, else the session's).
     model: Option<String>,
+    /// Raw model id behind `model`.
+    model_id: Option<String>,
+    /// `model` / `effort` come from the selected subagent thread.
+    node_sub: bool,
     ctx: Option<u64>,
     win: Option<u64>,
     win_estimated: bool,
@@ -521,10 +526,8 @@ fn get_status(state: State<Shared>, key: Option<String>) -> StatusDto {
     let store = state.store.lock().unwrap();
     let now = discovery::now_ms();
     let mem = cc_monitor::platform::memory();
-    let sid = key
-        .as_deref()
-        .and_then(parse_key)
-        .map(|id| id.session().to_string());
+    let node = key.as_deref().and_then(parse_key);
+    let sid = node.as_ref().map(|id| id.session().to_string());
     let m = sid
         .as_ref()
         .and_then(|sid| {
@@ -536,8 +539,19 @@ fn get_status(state: State<Shared>, key: Option<String>) -> StatusDto {
             mem,
             ..Default::default()
         });
+    let main_id = sid
+        .as_ref()
+        .and_then(|sid| store.thread(&NodeId::Main(sid.clone())))
+        .and_then(|t| t.model());
+    let sub = node
+        .as_ref()
+        .filter(|id| matches!(id, NodeId::Agent(..)))
+        .and_then(|id| store.thread(id));
+    let nm = metrics::node_model(&m, main_id, sub);
     StatusDto {
-        model: m.model,
+        model: nm.model,
+        model_id: nm.model_id,
+        node_sub: nm.sub,
         ctx: m.ctx,
         win: m.win.map(|w| w.0),
         win_estimated: m.win.is_some_and(|w| w.1),
@@ -545,7 +559,7 @@ fn get_status(state: State<Shared>, key: Option<String>) -> StatusDto {
         branch: m.branch,
         lines: m.lines,
         mem: m.mem,
-        effort: m.effort,
+        effort: nm.effort,
         five_h: m.five_h,
         seven_d: m.seven_d,
         compactions: m.compactions,
