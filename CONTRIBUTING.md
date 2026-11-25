@@ -3,9 +3,9 @@
 Thanks for helping! ccmon is MIT-licensed: you may use, modify, redistribute and sell it.
 To keep one shared source of truth, **changes to the code go through this repository**:
 
-- **Found a bug or have an idea?** Open an [issue](https://github.com/thanhson0514/cc-monitor/issues).
+- **Found a bug or have an idea?** Open an [issue](https://github.com/wik1ngst-1103/cc-monitor/issues).
   Search first; add your OS, ccmon version and Claude Code version.
-- **Want to change code?** [Fork](https://github.com/thanhson0514/cc-monitor/fork) the repo,
+- **Want to change code?** [Fork](https://github.com/wik1ngst-1103/cc-monitor/fork) the repo,
   create a branch, and open a pull request against `main`. For larger changes, open an issue
   first so we can agree on the approach.
 

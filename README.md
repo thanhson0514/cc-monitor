@@ -10,14 +10,14 @@ A free, open-source desktop app that turns **Claude Code** sessions into a clean
 real-time view: every prompt, command, file edit, sub-agent and workflow, with side-by-side diffs
 and plan usage. Local and read-only.
 
-[![CI](https://github.com/thanhson0514/cc-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/thanhson0514/cc-monitor/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/thanhson0514/cc-monitor?include_prereleases&sort=semver)](https://github.com/thanhson0514/cc-monitor/releases)
+[![CI](https://github.com/wik1ngst-1103/cc-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/wik1ngst-1103/cc-monitor/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/wik1ngst-1103/cc-monitor?include_prereleases&sort=semver)](https://github.com/wik1ngst-1103/cc-monitor/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-8ea2ff.svg)](LICENSE)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-informational)
 
-[**Download**](https://github.com/thanhson0514/cc-monitor/releases/latest) ·
-[Website](https://thanhson0514.github.io/cc-monitor) ·
-[Report an issue](https://github.com/thanhson0514/cc-monitor/issues) ·
+[**Download**](https://github.com/wik1ngst-1103/cc-monitor/releases/latest) ·
+[Website](https://wik1ngst-1103.github.io/cc-monitor) ·
+[Report an issue](https://github.com/wik1ngst-1103/cc-monitor/issues) ·
 [Tiếng Việt](README.vi.md)
 
 <img src="website/assets/screen-main.png" alt="ccmon: session tree, chat timeline with tool cards, file sidebar and status bar" />
@@ -65,7 +65,7 @@ On first launch ccmon finds your Claude Code data and starts watching; options l
 
 ## Install
 
-Grab the installer for your OS from the [latest release](https://github.com/thanhson0514/cc-monitor/releases/latest).
+Grab the installer for your OS from the [latest release](https://github.com/wik1ngst-1103/cc-monitor/releases/latest).
 
 **Windows 10/11** — run `ccmon_<version>_x64-setup.exe` (or the `.msi`). It installs for your user
 only (no admin needed); WebView2 is installed automatically if missing.
@@ -105,7 +105,7 @@ Requirements: Rust stable, Node.js 20+, Yarn 1, and the
 [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
 
 ```bash
-git clone https://github.com/thanhson0514/cc-monitor && cd cc-monitor
+git clone https://github.com/wik1ngst-1103/cc-monitor && cd cc-monitor
 cargo test --workspace
 ./gui/build.sh                       # desktop app → target/release/ccmon-gui
 cargo run --release -p cc-monitor    # terminal UI
@@ -129,7 +129,7 @@ out of transcripts. ccmon shows what is saved: short progress notes and thinking
 
 ## Contributing
 
-Bug reports and ideas: open an [issue](https://github.com/thanhson0514/cc-monitor/issues).
+Bug reports and ideas: open an [issue](https://github.com/wik1ngst-1103/cc-monitor/issues).
 Code changes: fork the repository and open a pull request — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License

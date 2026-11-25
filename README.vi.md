@@ -10,9 +10,9 @@
 gàng, cập nhật trực tiếp: từng prompt, lệnh, file đã sửa, subagent và workflow, kèm diff hai cột
 và hạn mức gói. Chạy cục bộ, chỉ đọc.
 
-[**Tải về**](https://github.com/thanhson0514/cc-monitor/releases/latest) ·
-[Website](https://thanhson0514.github.io/cc-monitor) ·
-[Báo lỗi](https://github.com/thanhson0514/cc-monitor/issues) ·
+[**Tải về**](https://github.com/wik1ngst-1103/cc-monitor/releases/latest) ·
+[Website](https://wik1ngst-1103.github.io/cc-monitor) ·
+[Báo lỗi](https://github.com/wik1ngst-1103/cc-monitor/issues) ·
 [English](README.md)
 
 <img src="website/assets/screen-main.png" alt="Màn hình chính của ccmon" />
@@ -46,7 +46,7 @@ Lần mở đầu tiên, ccmon tự tìm dữ liệu Claude Code và bắt đầ
 
 ## Cài đặt
 
-Tải bộ cài ở [bản phát hành mới nhất](https://github.com/thanhson0514/cc-monitor/releases/latest).
+Tải bộ cài ở [bản phát hành mới nhất](https://github.com/wik1ngst-1103/cc-monitor/releases/latest).
 
 - **Windows 10/11:** chạy `ccmon_<version>_x64-setup.exe` (hoặc `.msi`). Cài cho riêng tài khoản của
   bạn, không cần quyền admin; WebView2 tự cài nếu máy chưa có.
@@ -68,7 +68,7 @@ lưu, nút **Gỡ** trả lại như cũ.
 ## Build từ mã nguồn
 
 ```bash
-git clone https://github.com/thanhson0514/cc-monitor && cd cc-monitor
+git clone https://github.com/wik1ngst-1103/cc-monitor && cd cc-monitor
 cargo test --workspace
 ./gui/build.sh                       # ứng dụng desktop → target/release/ccmon-gui
 cargo run --release -p cc-monitor    # bản terminal
@@ -76,7 +76,7 @@ cargo run --release -p cc-monitor    # bản terminal
 
 ## Đóng góp
 
-Báo lỗi hoặc góp ý: mở [issue](https://github.com/thanhson0514/cc-monitor/issues). Sửa code: fork repo
+Báo lỗi hoặc góp ý: mở [issue](https://github.com/wik1ngst-1103/cc-monitor/issues). Sửa code: fork repo
 và mở pull request — xem [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Giấy phép
