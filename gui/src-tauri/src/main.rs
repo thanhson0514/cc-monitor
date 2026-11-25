@@ -1,7 +1,8 @@
 // No console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! ccmon GUI: Tauri shell around the `cc_monitor` core. Read-only.
+//! ccmon GUI: Tauri shell around the `cc_monitor` core. Read-only, except for
+//! sessions the user runs from the composer (`cmd_control`).
 //!
 //! A background worker (core `discovery::Worker`) tails transcripts; a pump thread
 //! applies its messages to the shared `Store` and emits `store-changed` to the
@@ -10,6 +11,7 @@
 mod assets;
 mod changes;
 mod cmd_catalog;
+mod cmd_control;
 
 use cc_monitor::bgtask::{BgKind, BgState, BgTask};
 use cc_monitor::config::{self, SharedConfig};
@@ -36,6 +38,8 @@ struct Shared {
     pinned: Pinned,
     root: PathBuf,
     config: SharedConfig,
+    /// Managed `claude` sessions started from the composer.
+    manager: cmd_control::SharedManager,
 }
 
 const INPUT_STR_MAX: usize = 20_000;
@@ -861,6 +865,23 @@ fn main() {
     });
 
     let pump_store = store.clone();
+    // The change callback runs on reader threads: it only emits, never locks the Manager.
+    let app_handle: Arc<std::sync::OnceLock<tauri::AppHandle>> = Arc::default();
+    let cb_handle = app_handle.clone();
+    let manager: cmd_control::SharedManager = Arc::new(Mutex::new(
+        cc_monitor::control::runner::Manager::new(Box::new(move |sid, st| {
+            if let Some(h) = cb_handle.get() {
+                let _ = h.emit(
+                    "control-changed",
+                    cmd_control::ControlChanged {
+                        sid: sid.to_string(),
+                        run_state: st.clone(),
+                    },
+                );
+            }
+        })),
+    ));
+    let exit_manager = manager.clone();
     tauri::Builder::default()
         .manage(Shared {
             store,
@@ -868,9 +889,11 @@ fn main() {
             pinned,
             root: discovery::projects_root(),
             config: shared_config,
+            manager,
         })
         .setup(move |app| {
             let handle = app.handle().clone();
+            let _ = app_handle.set(handle.clone());
             std::thread::spawn(move || {
                 let mut keys = BTreeSet::new();
                 let mut tree = false;
@@ -929,8 +952,19 @@ fn main() {
             preview_file,
             tail_task_output,
             cmd_catalog::get_catalog,
-            cmd_catalog::get_session_usage
+            cmd_catalog::get_session_usage,
+            cmd_control::get_control,
+            cmd_control::set_overlay,
+            cmd_control::send_prompt,
+            cmd_control::interrupt,
+            cmd_control::stop_managed,
+            cmd_control::list_projects
         ])
-        .run(tauri::generate_context!())
-        .expect("không khởi động được ccmon GUI");
+        .build(tauri::generate_context!())
+        .expect("không khởi động được ccmon GUI")
+        .run(move |_, ev| {
+            if let tauri::RunEvent::Exit = ev {
+                cmd_control::stop_all(&exit_manager);
+            }
+        });
 }

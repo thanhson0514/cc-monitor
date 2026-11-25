@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, CapKind, CapScope, Capability, Usage } from './api';
+import { api, CapKind, CapScope, Capability, ControlDto, toggleCap, Usage } from './api';
+import { capSwitch, LOCK_REASON } from './Composer';
 
 const TABS: [CapKind, string][] = [
     ['skill', 'Skills'],
@@ -7,7 +8,7 @@ const TABS: [CapKind, string][] = [
     ['mcp', 'MCP']
 ];
 
-const TOGGLE_TIP = 'Chỉ áp dụng cho session chạy từ ccmon';
+const TOGGLE_TIP = 'Chọn một session để bật/tắt; chỉ áp dụng cho session chạy từ ccmon';
 
 function scopeLabel(s: CapScope): { text: string; cls: string; title: string } {
     if (typeof s === 'string') {
@@ -29,6 +30,31 @@ export function Library({ sid, sessionLabel }: { sid: string | null; sessionLabe
     const [filter, setFilter] = useState('');
     const [caps, setCaps] = useState<Capability[] | null>(null);
     const [usage, setUsage] = useState<Usage[]>([]);
+    const [ctl, setCtl] = useState<ControlDto | null>(null);
+    const [err, setErr] = useState<string | null>(null);
+
+    useEffect(() => {
+        setCtl(null);
+        setErr(null);
+        if (!sid) return;
+        let ignore = false;
+        api.control(sid)
+            .then((d) => !ignore && setCtl(d))
+            .catch((e) => !ignore && setErr(String(e)));
+        return () => {
+            ignore = true;
+        };
+    }, [sid]);
+
+    const toggle = (c: Capability) => {
+        if (!sid || !ctl) return;
+        const o = toggleCap(ctl.overlay, c.kind, c.id);
+        setCtl({ ...ctl, overlay: o });
+        api.setOverlay(sid, o)
+            .then(setCtl)
+            .catch((e) => setErr(String(e)));
+    };
+    const ctlLock = !sid ? TOGGLE_TIP : ctl && !ctl.canControl ? LOCK_REASON[ctl.reason ?? ''] ?? 'Chỉ xem' : null;
 
     useEffect(() => {
         let ignore = false;
@@ -82,6 +108,8 @@ export function Library({ sid, sessionLabel }: { sid: string | null; sessionLabe
                     ))}
                 </div>
                 {sessionLabel && sid && <span className="muted small">Session: {sessionLabel}</span>}
+                {ctl?.pending && <span className="chip cmp-pending">Áp dụng từ lượt sau</span>}
+                {err && <span className="cmp-err small">{err}</span>}
                 <input
                     className="lib-filter"
                     placeholder="Lọc theo tên hoặc mô tả…"
@@ -96,7 +124,7 @@ export function Library({ sid, sessionLabel }: { sid: string | null; sessionLabe
                     <span>Phạm vi</span>
                     <span>Toàn cục</span>
                     <span>{withUse ? 'Session này' : ''}</span>
-                    <span />
+                    <span title="Bật/tắt cho session đang chọn (chạy từ ccmon)">{sid ? 'Session' : ''}</span>
                 </div>
                 {caps === null && <div className="muted pad small">Đang tải…</div>}
                 {caps !== null && rows.length === 0 && <div className="muted pad small">Không có mục nào.</div>}
@@ -114,13 +142,21 @@ export function Library({ sid, sessionLabel }: { sid: string | null; sessionLabe
                             </span>
                             <span className={c.enabledGlobally ? 'glob-on' : 'glob-off'}>{c.enabledGlobally ? 'Bật' : 'Tắt'}</span>
                             <span>{withUse && <UseCell u={u} />}</span>
-                            <span
-                                className={`switch ${c.enabledGlobally ? 'on' : ''}`}
-                                role="switch"
-                                aria-checked={c.enabledGlobally}
-                                aria-disabled="true"
-                                title={TOGGLE_TIP}
-                            />
+                            {(() => {
+                                const sw = ctl ? capSwitch(c, ctl.overlay, ctl) : { on: c.enabledGlobally, locked: null };
+                                const lock = ctlLock ?? sw.locked ?? (ctl ? null : 'Đang tải…');
+                                return (
+                                    <button
+                                        type="button"
+                                        className={`switch ${lock ? '' : 'live'} ${sw.on ? 'on' : ''}`}
+                                        role="switch"
+                                        aria-checked={sw.on}
+                                        disabled={!!lock}
+                                        title={lock ?? (sw.on ? 'Tắt cho session này' : 'Bật lại cho session này')}
+                                        onClick={() => toggle(c)}
+                                    />
+                                );
+                            })()}
                         </div>
                     );
                 })}

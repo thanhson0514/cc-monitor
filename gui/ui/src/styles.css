@@ -395,3 +395,53 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); }
 .switch.on { background: #232744; }
 .switch.on::after { left: 16px; background: var(--accent); }
+.switch.live { opacity: 1; cursor: pointer; }
+.switch.live:hover { border-color: #333a66; }
+.switch:disabled { cursor: not-allowed; }
+
+/* composer */
+.composer { position: relative; border-top: 1px solid var(--border); background: var(--panel); padding: 8px 20px 8px; display: flex; flex-direction: column; gap: 6px; }
+.cmp-row { display: flex; gap: 8px; align-items: stretch; }
+.cmp-input { flex: 1; min-width: 0; resize: vertical; min-height: 44px; max-height: 40vh; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 8px 10px; font: inherit; font-size: 13px; line-height: 1.45; }
+.cmp-input:focus { outline: none; border-color: #333a66; }
+.cmp-input:disabled { opacity: .6; cursor: not-allowed; }
+.cmp-row .btn { flex: none; align-self: flex-end; }
+.cmp-stop { color: var(--red); border-color: #5a2a2a; }
+.cmp-stop:hover { background: #2a1818; }
+.cmp-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.cmp-chip { font: inherit; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); cursor: pointer; }
+.cmp-chip:focus { outline: none; border-color: #333a66; }
+.cmp-chip:disabled { opacity: .5; cursor: not-allowed; }
+.cmp-chip option { background: var(--panel); color: var(--text); }
+.cmp-chip.warn { color: var(--amber); border-color: #6a4f1c; background: #2a2112; }
+.cmp-gear.on { background: #232744; color: var(--accent); border-color: #333a66; }
+.cmp-hint { color: var(--muted); font-size: 11px; }
+.cmp-chip.warn + .cmp-hint { color: var(--amber); }
+.cmp-pending { color: var(--amber); border-color: #6a4f1c; }
+.cmp-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.cmp-state { font-size: 11px; color: var(--muted); }
+.cmp-st-busy, .cmp-st-starting, .cmp-st-restarting { color: var(--accent); }
+.cmp-st-idle { color: var(--green); }
+.cmp-lock { font-size: 12px; color: var(--amber); }
+.cmp-err { font-size: 12px; color: var(--red); white-space: pre-wrap; overflow: hidden; text-overflow: ellipsis; }
+.composer.locked .cmp-input { border-style: dashed; }
+.cmp-drawer { position: absolute; left: 12px; right: 12px; bottom: calc(100% + 6px); max-height: 55vh; display: flex; flex-direction: column; background: var(--panel); border: 1px solid #333a66; border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); z-index: 20; overflow: hidden; }
+.cmp-drawer-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.cmp-drawer-head .viewer-close { margin-left: auto; }
+.cmp-drawer-title { font-weight: 600; font-size: 13px; }
+.cmp-drawer-bar { padding: 8px 14px; }
+.cmp-drawer-bar .lib-filter { width: 180px; }
+.cmp-drawer-list { overflow-y: auto; padding: 4px 14px 12px; }
+.cmp-cap { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(0, 2.5fr) 40px; gap: 12px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.cmp-cap.off .lib-name { color: var(--muted); text-decoration: line-through; }
+.cmp-cap-master { border-bottom-color: #333a66; }
+.cmp-off-count { color: var(--amber); }
+
+/* new session */
+.pane-title-row { display: flex; align-items: center; gap: 8px; }
+.new-sess-btn { margin-left: auto; font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--accent); padding: 2px 8px; border-radius: 6px; border: 1px solid #333a66; }
+.new-sess-btn:hover { background: #232744; }
+.new-sess-filter { margin-left: 0; width: 100%; }
+.new-sess-list { max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.new-sess-row { padding: 6px 8px; border-radius: 6px; text-align: left; }
+.new-sess-row:hover { background: var(--panel-2); }

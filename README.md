@@ -8,7 +8,7 @@
 
 A free, open-source desktop app that turns **Claude Code** sessions into a clean,
 real-time view: every prompt, command, file edit, sub-agent and workflow, with side-by-side diffs
-and plan usage. Local and read-only.
+and plan usage. Local; read-only unless you choose to run a session from ccmon.
 
 [![CI](https://github.com/wik1ngst-1103/cc-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/wik1ngst-1103/cc-monitor/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/wik1ngst-1103/cc-monitor?include_prereleases&sort=semver)](https://github.com/wik1ngst-1103/cc-monitor/releases)
@@ -42,7 +42,8 @@ everything as it happens, without changing how you work.
 | 📊 **Plan usage** | Model, context used, 5-hour and weekly limits, effort, git branch and lines changed in a compact status bar. |
 | 🧭 **Session history** | Open sessions first (with busy/idle state), then recently closed ones, then 30+ days of history grouped by project. The tree collapses to a narrow rail (`Ctrl+B`). |
 | ▶️ **What it's doing now** | A live line under the timeline: which tool is running, waiting on an agent, thinking, replying or waiting for you — with elapsed time. |
-| 🔒 **Local & read-only** | No account, no network calls, no telemetry. |
+| 💬 **Run sessions from ccmon** | Type a prompt under the timeline to continue a session or start a new one, with model, effort and permission-mode chips and per-session switches for skills, plugins, MCP servers, agents and workflows. |
+| 🔒 **Local; read-only unless you run a session from ccmon** | No account, no network calls of its own, no telemetry. |
 
 <table>
 <tr>
@@ -87,6 +88,27 @@ command. In Settings, ccmon can wrap your existing status line as
 `<ccmon> tee -- <your command>`: it saves a copy of that JSON for ccmon and passes it through
 unchanged, so your status line looks exactly the same. `settings.json` is backed up, and
 **Remove** restores it.
+
+## Run sessions from ccmon
+
+The composer under the timeline sends prompts to Claude Code for you. ccmon starts the `claude`
+binary you already have (`PATH`, `~/.local/bin` or `~/.claude/local`) as
+`claude -p --input-format stream-json --output-format stream-json [--resume <session>]`; the
+conversation is still read from the transcript, so everything else works as before.
+
+- **Continue or start:** type in the composer of an existing session, or use **+ Session mới…** in
+  the session tree and pick a project folder. `Enter` sends, `Shift+Enter` adds a line, **Dừng**
+  interrupts the running turn.
+- **Chips:** model, effort and permission mode apply to the next turn (ccmon restarts the process
+  between turns when they change; a "from next turn" chip shows while that is pending). In `-p` mode
+  there is no approval dialog: tools that need approval are denied unless you pick a more permissive
+  mode (`acceptEdits`, `plan`, or `bypassPermissions`, which skips all checks).
+- **Capabilities per session:** ⚙ in the composer (and the switches on the Library page) turn
+  skills, plugins, MCP servers, agents and workflows off for that session only, via
+  `--disallowedTools` / `--settings` launch flags. Your `settings.json` is never changed; ccmon's own
+  state lives in `~/.config/ccmon/` on Linux, `%APPDATA%\ccmon\` on Windows (`overlays/<session>.json`, `defaults.json`, `registry.json`).
+- **Terminal sessions stay read-only:** a session that is open in a terminal is never taken over;
+  its composer is locked ("Session đang chạy ở terminal — chỉ xem").
 
 ## How it works
 

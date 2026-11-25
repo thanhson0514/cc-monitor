@@ -16,6 +16,10 @@ pub fn load_overlay(sid: &str) -> Overlay {
 pub fn save_overlay(sid: &str, o: &Overlay) -> io::Result<()> {
     save_overlay_in(&state_dir(), sid, o)
 }
+/// Overlay for a session not started yet (`defaults.json`, else default).
+pub fn load_defaults() -> Overlay {
+    load_defaults_in(&state_dir())
+}
 pub fn load_registry() -> Registry {
     load_registry_in(&state_dir())
 }
@@ -74,6 +78,9 @@ pub fn save_overlay_in(dir: &Path, sid: &str, o: &Overlay) -> io::Result<()> {
         ));
     }
     write_atomic(&dir.join("overlays").join(format!("{sid}.json")), o)
+}
+pub fn load_defaults_in(dir: &Path) -> Overlay {
+    read_json(&dir.join("defaults.json")).unwrap_or_default()
 }
 pub fn load_registry_in(dir: &Path) -> Registry {
     read_json(&dir.join("registry.json")).unwrap_or_default()
@@ -142,6 +149,22 @@ mod tests {
         assert_eq!(load_registry_in(&d), r);
         std::fs::write(d.join("registry.json"), "xx").unwrap();
         assert_eq!(load_registry_in(&d), Registry::default());
+    }
+
+    #[test]
+    fn defaults_load_without_sid() {
+        let d = tmp("defaults");
+        assert_eq!(load_defaults_in(&d), Overlay::default());
+        let def = Overlay {
+            effort: Some("high".into()),
+            ..Default::default()
+        };
+        std::fs::write(
+            d.join("defaults.json"),
+            serde_json::to_string(&def).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(load_defaults_in(&d), def);
     }
 
     #[test]

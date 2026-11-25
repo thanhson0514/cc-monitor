@@ -6,6 +6,7 @@ import { Sidebar, Viewer } from './Sidebar';
 import { ChangesPanel } from './Changes';
 import { Setup } from './Setup';
 import { Library } from './Library';
+import { Composer } from './Composer';
 import logo from './assets/logo.png';
 
 const PAGE = 400;
@@ -113,7 +114,8 @@ function Tree({
     onSelect,
     onOpenOld,
     onSettings,
-    onCollapse
+    onCollapse,
+    onNewSession
 }: {
     rows: TreeRow[];
     selected: string | null;
@@ -121,6 +123,7 @@ function Tree({
     onOpenOld: (sid: string) => void;
     onSettings: () => void;
     onCollapse: () => void;
+    onNewSession: () => void;
 }) {
     const blocks = sessionBlocks(rows);
     const open = blocks.filter((b) => b[0].open);
@@ -154,7 +157,12 @@ function Tree({
                     <PanelIcon open />
                 </button>
             </div>
-            <div className="pane-title">Đang mở · {open.length}</div>
+            <div className="pane-title pane-title-row">
+                <span>Đang mở · {open.length}</span>
+                <button type="button" className="new-sess-btn" onClick={onNewSession} title="Chạy một session Claude Code mới từ ccmon">
+                    + Session mới…
+                </button>
+            </div>
             {open.length === 0 && <div className="muted pad small">Không có phiên nào đang chạy.</div>}
             {open.map((b) => (
                 <TreeRows key={b[0].key} rows={b} selected={selected} onSelect={onSelect} />
@@ -199,6 +207,40 @@ function Tree({
                 </button>
             )}
         </nav>
+    );
+}
+
+/** Pick the working directory of a new managed session (projects ccmon already knows). */
+function NewSessionPicker({ onPick, onClose }: { onPick: (cwd: string) => void; onClose: () => void }) {
+    const [list, setList] = useState<string[] | null>(null);
+    const [filter, setFilter] = useState('');
+    useEffect(() => {
+        api.projects().then(setList).catch(() => setList([]));
+    }, []);
+    const q = filter.trim().toLowerCase();
+    const shown = (list ?? []).filter((p) => !q || p.toLowerCase().includes(q));
+    return (
+        <div className="viewer-backdrop" onClick={onClose}>
+            <div className="setup new-sess" onClick={(e) => e.stopPropagation()}>
+                <h2>Session mới</h2>
+                <p className="muted small">Chọn thư mục làm việc (các project đã có session trong 30 ngày qua).</p>
+                <input className="lib-filter new-sess-filter" autoFocus placeholder="Lọc theo đường dẫn…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+                <div className="new-sess-list">
+                    {list === null && <div className="muted small">Đang tải…</div>}
+                    {list !== null && shown.length === 0 && <div className="muted small">Không có project nào.</div>}
+                    {shown.map((p) => (
+                        <button key={p} type="button" className="hist-row new-sess-row" onClick={() => onPick(p)} title={p}>
+                            <span className="tree-label">{p}</span>
+                        </button>
+                    ))}
+                </div>
+                <div className="setup-actions">
+                    <button type="button" className="btn" onClick={onClose}>
+                        Huỷ
+                    </button>
+                </div>
+            </div>
+        </div>
     );
 }
 
@@ -406,6 +448,8 @@ export default function App() {
     const [history, setHistory] = useState<string[]>([]);
     const [panel, setPanel] = useState<'assets' | 'changes' | null>('assets');
     const [setup, setSetup] = useState<'first' | 'settings' | null>(null);
+    const [picking, setPicking] = useState(false);
+    const [newCwd, setNewCwd] = useState<string | null>(null);
     useEffect(() => {
         api.setup().then((i) => !i.config.setupDone && setSetup('first'));
     }, []);
@@ -551,6 +595,7 @@ export default function App() {
     };
 
     const select = (key: string) => {
+        setNewCwd(null);
         if (key === selected) return;
         if (selected) setHistory((h) => [...h.slice(-50), selected]);
         setUserPicked(true);
@@ -570,6 +615,15 @@ export default function App() {
 
     const row = rows.find((r) => r.key === selected);
 
+    const started = (sid: string) => {
+        setNewCwd(null);
+        setUserPicked(true);
+        pendingOpen.current = `m:${sid}`;
+        api.openSession(sid);
+    };
+
+    const composerSid = row && row.kind === 'main' && row.tool !== 'codex' ? row.key.slice(2) : null;
+
     const openOld = (sid: string) => {
         setUserPicked(true);
         pendingOpen.current = `m:${sid}`;
@@ -586,6 +640,7 @@ export default function App() {
                     onOpenOld={openOld}
                     onSettings={() => setSetup('settings')}
                     onCollapse={() => setTreeOpen(false)}
+                    onNewSession={() => setPicking(true)}
                 />
             ) : (
                 <TreeRail rows={rows} selected={selected} onSelect={select} onExpand={() => setTreeOpen(true)} />
@@ -610,8 +665,8 @@ export default function App() {
                             ←
                         </button>
                     )}
-                    <span className="thread-title">{row?.label ?? view?.title ?? 'ccmon'}</span>
-                    {row && <span className={`badge st-${row.status}`}>{row.status}</span>}
+                    <span className="thread-title">{newCwd ? `Session mới · ${newCwd}` : row?.label ?? view?.title ?? 'ccmon'}</span>
+                    {row && !newCwd && <span className={`badge st-${row.status}`}>{row.status}</span>}
                     <PageNav page={page} onPage={setPage} />
                     <div className="panel-btns">
                         <button
@@ -662,7 +717,11 @@ export default function App() {
                             Hiện thêm {Math.min(PAGE, view.total - view.items.length)} mục cũ hơn ({view.total - view.items.length} còn lại)
                         </button>
                     )}
-                    {selected?.startsWith('w:') ? (
+                    {newCwd ? (
+                        <div className="muted pad">
+                            Session mới trong <code>{newCwd}</code>. Chọn model, effort, quyền và capability bên dưới rồi gửi prompt đầu tiên.
+                        </div>
+                    ) : selected?.startsWith('w:') ? (
                         <WorkflowView rows={rows} wfKey={selected} onSelect={select} />
                     ) : view ? (
                         <Chat view={view} now={now} onOpen={select} />
@@ -671,7 +730,12 @@ export default function App() {
                     )}
                     </div>
                 </div>
-                <ActivityBar a={activityOf(view && view.key === selected ? view : null, row, rows)} now={now} />
+                {!newCwd && <ActivityBar a={activityOf(view && view.key === selected ? view : null, row, rows)} now={now} />}
+                {newCwd ? (
+                    <Composer key={`new:${newCwd}`} sid={null} cwd={newCwd} onStarted={started} />
+                ) : (
+                    composerSid && <Composer key={composerSid} sid={composerSid} cwd={null} />
+                )}
                 <StatusBar s={status} />
             </main>
             {page === 'thread' && panel === 'assets' && selected && (
@@ -684,6 +748,16 @@ export default function App() {
                     onDone={() => {
                         setSetup(null);
                         loadTree();
+                    }}
+                />
+            )}
+            {picking && (
+                <NewSessionPicker
+                    onClose={() => setPicking(false)}
+                    onPick={(cwd) => {
+                        setPicking(false);
+                        setPage('thread');
+                        setNewCwd(cwd);
                     }}
                 />
             )}

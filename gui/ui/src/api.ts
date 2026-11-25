@@ -233,7 +233,82 @@ export interface Usage {
     last: number | null;
 }
 
+export interface Overlay {
+    model: string | null;
+    effort: string | null;
+    permissionMode: string | null;
+    disabledSkills: string[];
+    disabledPlugins: string[];
+    disabledMcp: string[];
+    disabledAgents: string[];
+    disabledWorkflows: string[];
+    workflowsOff: boolean;
+    mainAgent: string | null;
+}
+
+export type RunState =
+    | { kind: 'idle' }
+    | { kind: 'starting' }
+    | { kind: 'busy' }
+    | { kind: 'restarting' }
+    | { kind: 'exited'; code: number | null; stderrTail: string };
+
+export interface ControlDto {
+    overlay: Overlay;
+    runState: RunState | null;
+    canControl: boolean;
+    reason: 'liveElsewhere' | 'claudeNotFound' | null;
+    models: string[];
+    efforts: string[];
+    pending: boolean;
+    registryAgents: string[];
+    registryWorkflows: string[];
+}
+
+export const EMPTY_OVERLAY: Overlay = {
+    model: null,
+    effort: null,
+    permissionMode: null,
+    disabledSkills: [],
+    disabledPlugins: [],
+    disabledMcp: [],
+    disabledAgents: [],
+    disabledWorkflows: [],
+    workflowsOff: false,
+    mainAgent: null
+};
+
+const DISABLED_FIELD: Record<CapKind, 'disabledSkills' | 'disabledPlugins' | 'disabledMcp' | 'disabledAgents' | 'disabledWorkflows'> = {
+    skill: 'disabledSkills',
+    plugin: 'disabledPlugins',
+    mcp: 'disabledMcp',
+    agent: 'disabledAgents',
+    workflow: 'disabledWorkflows'
+};
+
+/** Off for this session per the overlay (the only source of truth for "disabled"). */
+export function capDisabled(o: Overlay, kind: CapKind, id: string): boolean {
+    return o[DISABLED_FIELD[kind]].includes(id);
+}
+
+export function toggleCap(o: Overlay, kind: CapKind, id: string): Overlay {
+    const f = DISABLED_FIELD[kind];
+    const cur = o[f];
+    return { ...o, [f]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].sort() };
+}
+
+export function isBusy(r: RunState | null): boolean {
+    return r?.kind === 'busy' || r?.kind === 'restarting' || r?.kind === 'starting';
+}
+
 export const api = {
+    control: (sid: string | null) => invoke<ControlDto>('get_control', { sid }),
+    setOverlay: (sid: string, overlay: Overlay) => invoke<ControlDto>('set_overlay', { sid, overlay }),
+    sendPrompt: (sid: string | null, cwd: string, text: string, overlay: Overlay | null) =>
+        invoke<string>('send_prompt', { sid, cwd, text, overlay }),
+    interrupt: (sid: string) => invoke<void>('interrupt', { sid }),
+    stopManaged: (sid: string) => invoke<boolean>('stop_managed', { sid }),
+    projects: () => invoke<string[]>('list_projects'),
     catalog: (sid: string | null) => invoke<Capability[]>('get_catalog', { sid }),
     sessionUsage: (sid: string) => invoke<Usage[]>('get_session_usage', { sid }),
     setup: () => invoke<SetupInfo>('get_setup'),

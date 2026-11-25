@@ -8,7 +8,7 @@
 
 Ứng dụng desktop miễn phí, mã nguồn mở, biến các phiên **Claude Code** thành một màn hình gọn
 gàng, cập nhật trực tiếp: từng prompt, lệnh, file đã sửa, subagent và workflow, kèm diff hai cột
-và hạn mức gói. Chạy cục bộ, chỉ đọc.
+và hạn mức gói. Local; read-only trừ khi bạn chủ động chạy session từ ccmon.
 
 [**Tải về**](https://github.com/wik1ngst-1103/cc-monitor/releases/latest) ·
 [Website](https://wik1ngst-1103.github.io/cc-monitor) ·
@@ -34,7 +34,10 @@ và hạn mức gói. Chạy cục bộ, chỉ đọc.
   phiên thu gọn được thành một dải hẹp (`Ctrl+B`).
 - **Đang làm gì:** một dòng trực tiếp dưới timeline cho biết agent đang chạy tool nào, đang chờ agent con,
   đang suy nghĩ, đang trả lời hay đang chờ bạn, kèm thời gian đã trôi.
-- **Cục bộ & chỉ đọc:** không tài khoản, không gọi mạng, không telemetry.
+- **Chạy session từ ccmon:** gõ prompt ngay dưới timeline để tiếp tục một session hoặc mở session mới,
+  kèm chip model, effort, chế độ quyền và công tắc bật/tắt skill, plugin, MCP, agent, workflow cho từng session.
+- **Local; read-only trừ khi bạn chủ động chạy session từ ccmon:** không tài khoản, ccmon không tự gọi
+  mạng, không telemetry.
 
 ## Dữ liệu đọc từ đâu
 
@@ -64,6 +67,26 @@ Claude Code chỉ đưa hạn mức 5 giờ/tuần và kích thước cửa sổ
 Cài đặt, ccmon có thể bọc status line hiện tại thành `<ccmon> tee -- <lệnh của bạn>`: lưu một bản JSON
 cho ccmon rồi chuyển nguyên cho lệnh cũ, nên status line trông y như trước. `settings.json` được sao
 lưu, nút **Gỡ** trả lại như cũ.
+
+## Chạy session từ ccmon
+
+Ô soạn (composer) dưới timeline gửi prompt cho Claude Code thay bạn. ccmon chạy chính lệnh `claude` đã
+cài trên máy (`PATH`, `~/.local/bin` hoặc `~/.claude/local`) dưới dạng
+`claude -p --input-format stream-json --output-format stream-json [--resume <session>]`; hội thoại vẫn
+được đọc từ transcript nên mọi phần xem khác vẫn như cũ.
+
+- **Tiếp tục hoặc mở mới:** gõ vào ô soạn của session đang xem, hoặc bấm **+ Session mới…** trên cây
+  session rồi chọn thư mục project. `Enter` gửi, `Shift+Enter` xuống dòng, **Dừng** ngắt lượt đang chạy.
+- **Chip:** model, effort và chế độ quyền áp dụng từ lượt sau (ccmon khởi động lại tiến trình giữa hai
+  lượt khi chúng đổi; chip “Áp dụng từ lượt sau” hiện trong lúc chờ). Ở chế độ `-p` không có hộp thoại
+  duyệt: tool cần duyệt sẽ bị từ chối, trừ khi bạn chọn chế độ thoáng hơn (`acceptEdits`, `plan`, hoặc
+  `bypassPermissions` — bỏ qua mọi kiểm tra).
+- **Capability cho từng session:** nút ⚙ trong ô soạn (và công tắc ở trang Thư viện) tắt skill, plugin,
+  MCP server, agent, workflow chỉ cho session đó, qua cờ `--disallowedTools` / `--settings` lúc khởi
+  chạy. `settings.json` của bạn không bị sửa; trạng thái riêng của ccmon nằm ở `~/.config/ccmon/` (Windows: `%APPDATA%\ccmon\`)
+  (`overlays/<session>.json`, `defaults.json`, `registry.json`).
+- **Session ở terminal chỉ xem:** session đang mở ở terminal không bao giờ bị tiếp quản; ô soạn bị khoá
+  (“Session đang chạy ở terminal — chỉ xem”).
 
 ## Build từ mã nguồn
 
