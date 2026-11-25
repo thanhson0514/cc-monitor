@@ -278,6 +278,64 @@ pub fn workflow_history(projects_root: &Path, workflow: &str, since_days: u32) -
     out
 }
 
+/// Run count and last activity (newest transcript mtime, ms) of one name.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct RunStat {
+    pub runs: u32,
+    pub last: Option<i64>,
+}
+
+/// Per-name stats for every agent type and workflow, keyed like
+/// [`agent_history`] / [`workflow_history`] names.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RunStats {
+    pub agents: std::collections::HashMap<String, RunStat>,
+    pub workflows: std::collections::HashMap<String, RunStat>,
+}
+
+fn bump(m: &mut std::collections::HashMap<String, RunStat>, name: String, mtime: i64) {
+    let e = m.entry(name).or_default();
+    e.runs += 1;
+    e.last = Some(e.last.map_or(mtime, |l| l.max(mtime)));
+}
+
+/// Counts for list views in ONE pass over the projects root: only directory
+/// listings, `stat`s, `.meta.json` / run json files and (for runs without a run
+/// json) one bounded transcript scan per session. Transcripts are not opened
+/// for timestamps.
+pub fn run_stats(projects_root: &Path, since_days: u32) -> RunStats {
+    let cutoff = cutoff_ms(since_days);
+    let mut out = RunStats::default();
+    for (project, sid, sdir) in sessions(projects_root) {
+        let dir = sdir.join("subagents");
+        for (id, _, mtime) in recent_agent_files(&dir, cutoff) {
+            let t = read_meta(&dir, &id)
+                .agent_type
+                .unwrap_or_else(|| "general-purpose".into());
+            bump(&mut out.agents, t, mtime);
+        }
+        let proj_dir = projects_root.join(&project);
+        let mut transcript_names = None;
+        for run in dirs_in(&dir.join("workflows")) {
+            let run_id = name_of(&run);
+            let files = recent_agent_files(&run.path(), cutoff);
+            let Some(newest) = files.iter().map(|f| f.2).max() else {
+                continue;
+            };
+            let name = read_run_file(&sdir, &run_id).workflow_name.or_else(|| {
+                transcript_names
+                    .get_or_insert_with(|| names_from_transcript(&proj_dir, &sid))
+                    .get(&run_id)
+                    .cloned()
+            });
+            if let Some(n) = name {
+                bump(&mut out.workflows, n, newest);
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -561,5 +619,72 @@ mod tests {
         let f = h.iter().find(|x| x.node_key == "w:s:wf_f").unwrap();
         assert_eq!(f.status, "running");
         assert_eq!(f.ended, None);
+    }
+
+    #[test]
+    fn run_stats_count_agents_and_workflows_in_one_pass() {
+        let t = tempfile::tempdir().unwrap();
+        let r = t.path();
+        for (sub, id) in [("p1/s1/subagents", "a1"), ("p2/s2/subagents", "a2")] {
+            agent(
+                r,
+                sub,
+                id,
+                r#"{"agentType":"Explore"}"#,
+                "2026-11-25T07:00:00.000Z",
+                "2026-11-25T07:01:00.000Z",
+            );
+        }
+        agent(
+            r,
+            "p1/s1/subagents",
+            "a3",
+            "",
+            "2026-11-25T07:00:00.000Z",
+            "2026-11-25T07:01:00.000Z",
+        );
+        let wf = "p1/s1/subagents/workflows";
+        agent(
+            r,
+            &format!("{wf}/wf_1"),
+            "x",
+            "",
+            "2026-11-25T07:00:00.000Z",
+            "2026-11-25T07:01:00.000Z",
+        );
+        agent(
+            r,
+            &format!("{wf}/wf_1"),
+            "y",
+            "",
+            "2026-11-25T07:00:00.000Z",
+            "2026-11-25T07:01:00.000Z",
+        );
+        write(
+            &r.join("p1/s1/workflows/wf_1.json"),
+            r#"{"workflowName":"review","status":"completed"}"#,
+        );
+        agent(
+            r,
+            &format!("{wf}/wf_2"),
+            "z",
+            "",
+            "2026-11-25T07:00:00.000Z",
+            "2026-11-25T07:01:00.000Z",
+        );
+        write(
+            &r.join("p1/s1.jsonl"),
+            "{\"toolUseResult\":{\"runId\":\"wf_2\",\"workflowName\":\"review\"}}\n",
+        );
+        let s = run_stats(r, 0);
+        assert_eq!(s.agents["Explore"].runs, 2);
+        assert_eq!(s.agents["general-purpose"].runs, 1);
+        assert!(s.agents["Explore"].last.is_some());
+        // one run = one count, however many agents it had
+        assert_eq!(s.workflows["review"].runs, 2);
+        assert_eq!(s.workflows.len(), 1);
+        // counts agree with the per-name history
+        assert_eq!(agent_history(r, "Explore", 0).len(), 2);
+        assert_eq!(workflow_history(r, "review", 0).len(), 2);
     }
 }

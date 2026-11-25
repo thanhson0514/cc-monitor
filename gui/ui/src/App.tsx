@@ -6,6 +6,7 @@ import { Sidebar, Viewer } from './Sidebar';
 import { ChangesPanel } from './Changes';
 import { Setup } from './Setup';
 import { Library } from './Library';
+import { Agents } from './Agents';
 import { Composer } from './Composer';
 import { AppHeader, AssetsIcon, DiffIcon, HeadIconBtn, Page, PAGE_TITLE } from './Header';
 import logo from './assets/logo.png';
@@ -612,6 +613,21 @@ export default function App() {
         api.openSession(sid);
     };
 
+    /** Open a run from the Agents page in the thread view (loading an old session if needed). */
+    const openRun = (key: string, sid: string) => {
+        setPage('thread');
+        setNewCwd(null);
+        if (rows.some((r) => r.key === key)) {
+            select(key);
+            return;
+        }
+        // Not in the tree yet: keep the current view until the worker loads it.
+        if (selected) setHistory((h) => [...h.slice(-50), selected]);
+        setUserPicked(true);
+        pendingOpen.current = key;
+        api.openSession(sid);
+    };
+
     return (
         <div className={`app ${showSidebar && page === 'thread' ? 'with-sidebar' : ''} ${treeOpen ? '' : 'tree-collapsed'}`}>
             {treeOpen ? (
@@ -633,7 +649,7 @@ export default function App() {
                     {page === 'library' ? (
                         <Library sid={selected ? selected.split(':')[1] ?? null : null} sessionLabel={row?.label ?? null} />
                     ) : (
-                        <div className="muted pad">Sắp có.</div>
+                        <Agents sid={selected ? selected.split(':')[1] ?? null : null} onOpenRun={openRun} />
                     )}
                 </main>
             )}

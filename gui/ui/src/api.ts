@@ -225,6 +225,36 @@ export interface Capability {
     meta: Record<string, unknown>;
 }
 
+/** Agent or workflow on the Agents page (`list_agents` / `list_workflows`). */
+export interface AgentItem extends Capability {
+    disabled: boolean;
+    runs: number;
+    lastRun: number | null;
+    body: string | null;
+    editable: boolean;
+}
+
+export interface RunRecord {
+    sessionId: string;
+    project: string;
+    nodeKey: string;
+    started: number | null;
+    ended: number | null;
+    status: string;
+    description: string;
+}
+
+export interface AgentDef {
+    name: string;
+    description: string;
+    tools: string[] | null;
+    model: string | null;
+    prompt: string;
+}
+
+/** Error prefix of `save_agent` when the target file exists. */
+export const EXISTS_PREFIX = 'EXISTS:';
+
 export interface Usage {
     kind: CapKind;
     id: string;
@@ -310,6 +340,16 @@ export const api = {
     stopManaged: (sid: string) => invoke<boolean>('stop_managed', { sid }),
     projects: () => invoke<string[]>('list_projects'),
     catalog: (sid: string | null) => invoke<Capability[]>('get_catalog', { sid }),
+    listAgents: (sid: string | null, cwd: string | null) => invoke<AgentItem[]>('list_agents', { sid, cwd }),
+    listWorkflows: (sid: string | null, cwd: string | null) => invoke<AgentItem[]>('list_workflows', { sid, cwd }),
+    sessionProject: (sid: string) => invoke<string | null>('session_project', { sid }),
+    agentTools: () => invoke<string[]>('agent_tools'),
+    agentHistory: (name: string, days: number) => invoke<RunRecord[]>('agent_history', { name, days }),
+    workflowHistory: (name: string, days: number) => invoke<RunRecord[]>('workflow_history', { name, days }),
+    setAgentDisabled: (name: string, disabled: boolean) => invoke<void>('set_agent_disabled', { name, disabled }),
+    setWorkflowDisabled: (name: string, disabled: boolean) => invoke<void>('set_workflow_disabled', { name, disabled }),
+    saveAgent: (scope: 'user' | 'project', cwd: string | null, def: AgentDef, overwrite: boolean) =>
+        invoke<string>('save_agent', { scope, cwd, def, overwrite }),
     sessionUsage: (sid: string) => invoke<Usage[]>('get_session_usage', { sid }),
     setup: () => invoke<SetupInfo>('get_setup'),
     saveSetup: (claude: boolean, codex: boolean, statusline: boolean) =>

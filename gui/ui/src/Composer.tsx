@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { api, CapKind, Capability, capDisabled, ControlDto, EMPTY_OVERLAY, isBusy, Overlay, RunState, toggleCap } from './api';
+import { AgentItem, api, CapKind, Capability, capDisabled, ControlDto, EMPTY_OVERLAY, isBusy, Overlay, RunState, toggleCap } from './api';
 
 const PERMISSION_MODES: [string, string][] = [
     ['default', 'default'],
@@ -141,6 +141,17 @@ function CapDrawer({
     );
 }
 
+/** `@query` right before the caret (at start or after whitespace), else null. */
+export function atQuery(text: string, caret: number): { start: number; q: string } | null {
+    const m = /(^|\s)@([\w:.-]*)$/.exec(text.slice(0, caret));
+    return m ? { start: caret - m[2].length - 1, q: m[2] } : null;
+}
+
+/** Agents a session may use: not off in ccmon, Claude Code or this session's overlay. */
+function usableAgents(list: AgentItem[], o: Overlay): AgentItem[] {
+    return list.filter((a) => !a.disabled && a.enabledGlobally && !capDisabled(o, 'agent', a.id));
+}
+
 /**
  * Prompt input under the chat. `sid = null`: new session in `cwd` (overlay kept
  * locally until the first send, then stored for the new session).
@@ -154,6 +165,19 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
     const [drawer, setDrawer] = useState(false);
     const sidRef = useRef(sid);
     sidRef.current = sid;
+    const input = useRef<HTMLTextAreaElement>(null);
+    const [agents, setAgents] = useState<AgentItem[]>([]);
+    const [at, setAt] = useState<{ start: number; q: string } | null>(null);
+    const [atIdx, setAtIdx] = useState(0);
+    useEffect(() => {
+        let ignore = false;
+        api.listAgents(sid, sid ? null : cwd)
+            .then((a) => !ignore && setAgents(a))
+            .catch(() => !ignore && setAgents([]));
+        return () => {
+            ignore = true;
+        };
+    }, [sid, cwd]);
 
     const load = useCallback(() => {
         const want = sidRef.current;
@@ -227,6 +251,31 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
         if (sid) api.stopManaged(sid).then(load).catch((e) => setErr(String(e)));
     };
 
+    const usable = usableAgents(agents, overlay);
+    const atList = at ? usable.filter((a) => a.id.toLowerCase().includes(at.q.toLowerCase())).slice(0, 8) : [];
+    const syncAt = (value: string, caret: number) => {
+        const q = atQuery(value, caret);
+        setAt(q);
+        setAtIdx(0);
+    };
+    /** Replace `@query` with a manual reference to the agent. */
+    const pickAgent = (a: AgentItem) => {
+        if (!at) return;
+        const caret = at.start + 1 + at.q.length;
+        const ins = `Dùng agent ${a.id} để `;
+        const next = text.slice(0, at.start) + ins + text.slice(caret);
+        setText(next);
+        setAt(null);
+        const pos = at.start + ins.length;
+        requestAnimationFrame(() => {
+            const el = input.current;
+            if (el) {
+                el.focus();
+                el.setSelectionRange(pos, pos);
+            }
+        });
+    };
+
     const pm = overlay.permissionMode ?? 'default';
     const exited = runState?.kind === 'exited' && (runState.code ?? 0) !== 0 && runState.stderrTail.trim() ? runState : null;
     const lockText = locked ? LOCK_REASON[dto?.reason ?? ''] ?? 'Không điều khiển được session này' : null;
@@ -246,15 +295,57 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
                     claude đã thoát (mã {exited.code}): {exited.stderrTail.trim().split('\n').slice(-1)[0]}
                 </div>
             )}
+            {at && atList.length > 0 && !locked && (
+                <div className="cmp-at" role="listbox" aria-label="Chọn agent">
+                    <div className="cmp-at-head">Tham chiếu agent (↑↓ chọn, Enter chèn, Esc đóng)</div>
+                    {atList.map((a, i) => (
+                        <button
+                            key={a.id}
+                            type="button"
+                            role="option"
+                            aria-selected={i === atIdx}
+                            className={`cmp-at-row ${i === atIdx ? 'on' : ''}`}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => pickAgent(a)}
+                        >
+                            <span className="lib-name">{a.id}</span>
+                            <span className="lib-desc">{a.description.split('\n')[0]}</span>
+                        </button>
+                    ))}
+                </div>
+            )}
             <div className="cmp-row">
                 <textarea
+                    ref={input}
                     className="cmp-input"
                     rows={2}
                     value={text}
                     disabled={locked || sending}
                     placeholder={placeholder}
-                    onChange={(e) => setText(e.target.value)}
+                    onChange={(e) => {
+                        setText(e.target.value);
+                        syncAt(e.target.value, e.target.selectionStart ?? e.target.value.length);
+                    }}
+                    onBlur={() => setAt(null)}
                     onKeyDown={(e) => {
+                        if (at && atList.length > 0) {
+                            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                                e.preventDefault();
+                                const d = e.key === 'ArrowDown' ? 1 : -1;
+                                setAtIdx((i) => (i + d + atList.length) % atList.length);
+                                return;
+                            }
+                            if ((e.key === 'Enter' || e.key === 'Tab') && !e.nativeEvent.isComposing) {
+                                e.preventDefault();
+                                pickAgent(atList[Math.min(atIdx, atList.length - 1)]);
+                                return;
+                            }
+                            if (e.key === 'Escape') {
+                                e.preventDefault();
+                                setAt(null);
+                                return;
+                            }
+                        }
                         if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                             e.preventDefault();
                             send();
@@ -313,6 +404,24 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
                             quyền: {l}
                         </option>
                     ))}
+                </select>
+                <select
+                    className={`cmp-chip ${overlay.mainAgent ? 'on' : ''}`}
+                    value={overlay.mainAgent ?? ''}
+                    disabled={locked}
+                    aria-label="Chạy session như agent"
+                    title="Chạy session như agent (--agent): session dùng prompt, tools và model của agent đó. Gõ @ trong ô nhập để tham chiếu agent thủ công."
+                    onChange={(e) => update({ ...overlay, mainAgent: e.target.value || null })}
+                >
+                    <option value="">agent: không</option>
+                    {usable.map((a) => (
+                        <option key={a.id} value={a.id}>
+                            agent: {a.id}
+                        </option>
+                    ))}
+                    {overlay.mainAgent && !usable.some((a) => a.id === overlay.mainAgent) && (
+                        <option value={overlay.mainAgent}>agent: {overlay.mainAgent} (đang tắt)</option>
+                    )}
                 </select>
                 <span className="cmp-hint" title={PERMISSION_HINT}>
                     {pm === 'bypassPermissions' ? '⚠ Bỏ qua mọi kiểm tra quyền' : 'Tool cần duyệt sẽ tự bị từ chối'}

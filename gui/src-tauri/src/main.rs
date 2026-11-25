@@ -10,6 +10,7 @@
 
 mod assets;
 mod changes;
+mod cmd_agents;
 mod cmd_catalog;
 mod cmd_control;
 
@@ -951,6 +952,15 @@ fn main() {
             get_diff,
             preview_file,
             tail_task_output,
+            cmd_agents::list_agents,
+            cmd_agents::list_workflows,
+            cmd_agents::agent_tools,
+            cmd_agents::session_project,
+            cmd_agents::agent_history,
+            cmd_agents::workflow_history,
+            cmd_agents::set_agent_disabled,
+            cmd_agents::set_workflow_disabled,
+            cmd_agents::save_agent,
             cmd_catalog::get_catalog,
             cmd_catalog::get_session_usage,
             cmd_control::get_control,

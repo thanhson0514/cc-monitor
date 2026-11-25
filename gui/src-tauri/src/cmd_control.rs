@@ -166,7 +166,7 @@ fn sessions_dir(root: &Path) -> PathBuf {
 
 /// Project cwds ccmon knows: tracked sessions (most recent first), then the
 /// newest transcript of each project in the last 30 days.
-fn known_cwds(store: &Mutex<Store>, root: &Path) -> Vec<String> {
+pub(crate) fn known_cwds(store: &Mutex<Store>, root: &Path) -> Vec<String> {
     let mut out: Vec<(i64, String)> = {
         let st = lock(store);
         st.sessions

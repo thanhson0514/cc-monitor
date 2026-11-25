@@ -87,8 +87,15 @@ fn scan_ctx(cwd: Option<&str>) -> ScanCtx {
 type CatalogCache = Mutex<HashMap<Option<String>, (Instant, Catalog)>>;
 static CACHE: std::sync::OnceLock<CatalogCache> = std::sync::OnceLock::new();
 
+/// Drop cached scans (after ccmon itself changed an agent file or the registry).
+pub(crate) fn invalidate_catalog() {
+    if let Some(c) = CACHE.get() {
+        c.lock().unwrap().clear();
+    }
+}
+
 /// Catalog for `cwd`, rescanned at most every 5 s.
-fn catalog_for(cwd: Option<&str>) -> Catalog {
+pub(crate) fn catalog_for(cwd: Option<&str>) -> Catalog {
     let key = cwd.filter(|c| !c.is_empty()).map(str::to_string);
     let cache = CACHE.get_or_init(Default::default);
     if let Some((at, cat)) = cache.lock().unwrap().get(&key) {
