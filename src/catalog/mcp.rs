@@ -6,11 +6,17 @@ use std::path::Path;
 
 pub struct McpProvider;
 
-/// Claude Code turns every non-alphanumeric char of a server name into `_`
-/// when it builds tool names (`mcp__<server>__<tool>`); compare in this form.
+/// Claude Code turns every char of a server name outside `[A-Za-z0-9_-]` into
+/// `_` (hyphens are kept) when it builds tool names (`mcp__<server>__<tool>`); compare in this form.
 pub fn normalize(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -212,6 +218,11 @@ mod tests {
         assert_eq!(normalize("claude.ai Claude Docs"), "claude_ai_Claude_Docs");
         assert_eq!(normalize("plugin:gitlab:gitlab"), "plugin_gitlab_gitlab");
         assert_eq!(normalize("codegraph"), "codegraph");
+        assert_eq!(normalize("docs-langchain"), "docs-langchain");
+        assert_eq!(
+            normalize("plugin:chrome-devtools-mcp:chrome-devtools"),
+            "plugin_chrome-devtools-mcp_chrome-devtools"
+        );
     }
 
     #[test]

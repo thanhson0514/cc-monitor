@@ -43,26 +43,66 @@ pub struct LaunchSpec {
     pub settings_file: Option<PathBuf>,
 }
 
-/// Locate the `claude` binary: PATH, `~/.local/bin/claude`, `~/.claude/local/claude`.
+fn is_exec(p: &Path) -> bool {
+    let Ok(m) = std::fs::metadata(p) else {
+        return false;
+    };
+    if !m.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        m.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+fn find_in(dirs: &[PathBuf]) -> Option<PathBuf> {
+    let names: &[&str] = if cfg!(windows) {
+        &["claude.exe", "claude.cmd"]
+    } else {
+        &["claude"]
+    };
+    dirs.iter()
+        .flat_map(|d| names.iter().map(move |n| d.join(n)))
+        .find(|c| is_exec(c))
+}
+
+/// Locate the `claude` binary: PATH, `~/.local/bin`, `~/.claude/local`.
 pub fn find_claude() -> Option<PathBuf> {
-    let on_path = std::env::var_os("PATH").and_then(|p| {
-        std::env::split_paths(&p)
-            .map(|d| d.join("claude"))
-            .find(|c| c.is_file())
-    });
-    on_path.or_else(|| {
-        let home = dirs::home_dir()?;
-        [".local/bin/claude", ".claude/local/claude"]
-            .iter()
-            .map(|r| home.join(r))
-            .find(|c| c.is_file())
-    })
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|p| std::env::split_paths(&p).collect())
+        .unwrap_or_default();
+    if let Some(home) = dirs::home_dir() {
+        dirs.push(home.join(".local").join("bin"));
+        dirs.push(home.join(".claude").join("local"));
+    }
+    find_in(&dirs)
 }
 
 /// Translate an overlay into CLI args (verified mapping: docs/architecture/control.md).
 /// Each `--disallowedTools` rule is its own args element. With `sid == None` a
 /// new session is started (its id comes from the first stdout event).
 pub fn build_args(
+    sid: Option<&str>,
+    cwd: &Path,
+    o: &Overlay,
+    state_dir: &Path,
+) -> io::Result<LaunchSpec> {
+    let program = find_claude().ok_or_else(claude_not_found)?;
+    build_args_with(program, sid, cwd, o, state_dir)
+}
+
+fn claude_not_found() -> io::Error {
+    io::Error::new(io::ErrorKind::NotFound, "claude binary not found")
+}
+
+fn build_args_with(
+    program: PathBuf,
     sid: Option<&str>,
     cwd: &Path,
     o: &Overlay,
@@ -136,7 +176,7 @@ pub fn build_args(
         args.extend(rules);
     }
     Ok(LaunchSpec {
-        program: find_claude().unwrap_or_else(|| PathBuf::from("claude")),
+        program,
         args,
         cwd: cwd.to_path_buf(),
         settings_file,
@@ -146,6 +186,11 @@ pub fn build_args(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[allow(non_snake_case)]
+    fn P() -> PathBuf {
+        PathBuf::from("claude")
+    }
 
     fn set(v: &[&str]) -> BTreeSet<String> {
         v.iter().map(|s| s.to_string()).collect()
@@ -161,7 +206,7 @@ mod tests {
             main_agent: Some("Explore".into()),
             ..Default::default()
         };
-        let s = build_args(Some("abc-123"), Path::new("/w"), &o, d.path()).unwrap();
+        let s = build_args_with(P(), Some("abc-123"), Path::new("/w"), &o, d.path()).unwrap();
         assert_eq!(s.cwd, Path::new("/w"));
         assert_eq!(
             s.args,
@@ -197,7 +242,7 @@ mod tests {
             disabled_workflows: set(&["deep-research"]),
             ..Default::default()
         };
-        let s = build_args(Some("s1"), Path::new("/w"), &o, d.path()).unwrap();
+        let s = build_args_with(P(), Some("s1"), Path::new("/w"), &o, d.path()).unwrap();
         let i = s
             .args
             .iter()
@@ -226,7 +271,7 @@ mod tests {
             disabled_workflows: set(&["x"]),
             ..Default::default()
         };
-        let s = build_args(Some("s1"), Path::new("/w"), &o, d.path()).unwrap();
+        let s = build_args_with(P(), Some("s1"), Path::new("/w"), &o, d.path()).unwrap();
         assert_eq!(
             &s.args[s.args.len() - 2..],
             ["--disallowedTools", "Workflow"]
@@ -236,7 +281,14 @@ mod tests {
     #[test]
     fn settings_file_only_when_plugins_disabled() {
         let d = tempfile::tempdir().unwrap();
-        let none = build_args(Some("s1"), Path::new("/w"), &Overlay::default(), d.path()).unwrap();
+        let none = build_args_with(
+            P(),
+            Some("s1"),
+            Path::new("/w"),
+            &Overlay::default(),
+            d.path(),
+        )
+        .unwrap();
         assert!(none.settings_file.is_none() && !none.args.contains(&"--settings".to_string()));
         assert!(!d.path().join("launch").exists());
         assert!(!none.args.contains(&"--disallowedTools".to_string()));
@@ -244,7 +296,7 @@ mod tests {
             disabled_plugins: set(&["superpowers@claude-plugins-official"]),
             ..Default::default()
         };
-        let s = build_args(Some("s1"), Path::new("/w"), &o, d.path()).unwrap();
+        let s = build_args_with(P(), Some("s1"), Path::new("/w"), &o, d.path()).unwrap();
         let f = s.settings_file.unwrap();
         assert_eq!(f, d.path().join("launch/s1.settings.json"));
         assert!(s
@@ -266,15 +318,65 @@ mod tests {
             disabled_plugins: set(&["p@m"]),
             ..Default::default()
         };
-        let s = build_args(None, Path::new("/w"), &o, d.path()).unwrap();
+        let s = build_args_with(P(), None, Path::new("/w"), &o, d.path()).unwrap();
         assert!(!s.args.contains(&"--resume".to_string()));
         let f = s.settings_file.unwrap();
         assert!(f.file_name().unwrap().to_string_lossy().starts_with("new-"));
     }
 
     #[test]
+    fn hyphenated_mcp_rule_keeps_hyphens() {
+        let d = tempfile::tempdir().unwrap();
+        let o = Overlay {
+            disabled_mcp: set(&[
+                "docs-langchain",
+                "plugin:chrome-devtools-mcp:chrome-devtools",
+            ]),
+            ..Default::default()
+        };
+        let s = build_args_with(P(), Some("s1"), Path::new("/w"), &o, d.path()).unwrap();
+        assert!(s.args.contains(&"mcp__docs-langchain".to_string()));
+        assert!(s
+            .args
+            .contains(&"mcp__plugin_chrome-devtools-mcp_chrome-devtools".to_string()));
+    }
+
+    #[test]
+    fn find_in_requires_existing_executable() {
+        let d = tempfile::tempdir().unwrap();
+        let dirs = vec![d.path().to_path_buf()];
+        assert!(find_in(&dirs).is_none());
+        let name = if cfg!(windows) {
+            "claude.exe"
+        } else {
+            "claude"
+        };
+        let f = d.path().join(name);
+        std::fs::write(&f, "#!/bin/sh\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert!(find_in(&dirs).is_none(), "non-executable must be skipped");
+            std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert_eq!(find_in(&dirs), Some(f));
+    }
+
+    #[test]
+    fn missing_binary_is_not_found_error() {
+        assert_eq!(claude_not_found().kind(), io::ErrorKind::NotFound);
+    }
+
+    #[test]
     fn invalid_sid_rejected() {
         let d = tempfile::tempdir().unwrap();
-        assert!(build_args(Some("../x"), Path::new("/w"), &Overlay::default(), d.path()).is_err());
+        assert!(build_args_with(
+            P(),
+            Some("../x"),
+            Path::new("/w"),
+            &Overlay::default(),
+            d.path()
+        )
+        .is_err());
     }
 }

@@ -519,4 +519,37 @@ mod tests {
         ));
         assert_eq!(normalize("plugin:gitlab:gitlab"), "plugin_gitlab_gitlab");
     }
+
+    #[test]
+    fn hyphenated_mcp_ids_match_real_tool_prefix() {
+        let cat = Catalog {
+            items: vec![
+                cap(Mcp, "docs-langchain"),
+                cap(Mcp, "plugin:chrome-devtools-mcp:chrome-devtools"),
+            ],
+        };
+        let t = thread(&[
+            tool_line(
+                "1",
+                "2026-11-25T00:00:01.000Z",
+                "mcp__docs-langchain__search_docs_by_lang_chain",
+                json!({}),
+            ),
+            tool_line(
+                "2",
+                "2026-11-25T00:00:02.000Z",
+                "mcp__plugin_chrome-devtools-mcp_chrome-devtools__click",
+                json!({}),
+            ),
+        ]);
+        let u = session_usage(&[&t], &cat);
+        assert!(matches!(
+            state(&u, Mcp, "docs-langchain"),
+            UseState::Used { count: 1, .. }
+        ));
+        assert!(matches!(
+            state(&u, Mcp, "plugin:chrome-devtools-mcp:chrome-devtools"),
+            UseState::Used { count: 1, .. }
+        ));
+    }
 }

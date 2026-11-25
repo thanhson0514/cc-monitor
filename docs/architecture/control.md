@@ -15,7 +15,7 @@ Spike run in an empty scratch dir with `--model haiku`, evidence taken mainly fr
 | main agent | `--agent <name>` | OK | `--agent Explore` -> init tool list switches to Explore's tool set (no Edit/Write/Task) |
 | disable skill | `--disallowedTools "Skill(x)"` | OK, incl. colon ids | `Skill(superpowers:brainstorming)` -> `<tr>` `Skill execution blocked by permission rules`; `find-skills` (not listed) still `Launching skill`. Init still lists the skill (deny is at call time, not listing) |
 | disable plugin | `--settings <file>` `{"enabledPlugins":{"id":false}}` | OK | `superpowers@claude-plugins-official`: init skills 64 -> 49, plugin gone from `plugins`, `superpowers:*` gone |
-| disable MCP server | `--disallowedTools "mcp__<normalized>"` | OK (server-level prefix) | `mcp__codegraph mcp__claude_ai_Claude_Docs` -> init mcp tools 12 -> 3 (only docs-langchain left). Tools are removed from the list entirely. `<normalized>` = `catalog::mcp::normalize(id)` (`claude.ai Claude Docs` -> `claude_ai_Claude_Docs`). Fallback (`--mcp-config --strict-mcp-config`) NOT needed |
+| disable MCP server | `--disallowedTools "mcp__<normalized>"` | OK (server-level prefix) | `mcp__codegraph mcp__claude_ai_Claude_Docs` -> init mcp tools 12 -> 3 (only docs-langchain left). Tools are removed from the list entirely. `<normalized>` = `catalog::mcp::normalize(id)`: chars outside `[A-Za-z0-9_-]` become `_`, hyphens are kept (`claude.ai Claude Docs` -> `claude_ai_Claude_Docs`, `docs-langchain` -> `docs-langchain`, `plugin:chrome-devtools-mcp:chrome-devtools` -> `plugin_chrome-devtools-mcp_chrome-devtools`). Fallback (`--mcp-config --strict-mcp-config`) NOT needed |
 | disable agent | `--disallowedTools "Agent(a)"` | OK, incl. colon names | `Agent(Explore)`: `<tr>` `Agent type 'Explore' has been denied by permission rule 'Agent(Explore)' from cliArg.`; same for `Agent(impeccable:impeccable-documenter)`. Init still lists the agent |
 | disable all workflows | `--disallowedTools "Workflow"` | OK | `Workflow` tool disappears from init tools |
 | disable one workflow | `--disallowedTools "Workflow(name)"` | OK (per-workflow form exists) | `Workflow(deep-research)` -> `<tr>` `Workflow deep-research blocked by permission rules`; with `Workflow(other)` the same call is not blocked (`Review dynamic workflow before running`). Tool stays listed |
@@ -29,6 +29,12 @@ Spike run in an empty scratch dir with `--model haiku`, evidence taken mainly fr
 - Deny rules block at call time; skills/agents remain in init lists. UI should not rely on init to show "disabled".
 - Plugin disabling needs the settings file: `state_dir/launch/<sid>.settings.json` (`new-<millis>` for new sessions).
 - Rules with `Skill(...)`/`Agent(...)` accept `:` in names; MCP prefixes must use the normalized name.
+
+## Settings layering
+`--settings <file>` is layered on top of the user's settings: in the spike only `superpowers` was turned off and every other plugin stayed enabled. The file therefore only needs the `enabledPlugins` entries to disable. Cleanup of leftover `launch/*.settings.json` files belongs to Task 9.
+
+## Binary lookup
+`find_claude()` searches PATH, `~/.local/bin`, `~/.claude/local` (on Windows `claude.exe` / `claude.cmd`; on unix the file must be executable). `build_args` returns `io::ErrorKind::NotFound` when nothing is found.
 
 ## Limitations
 - None blocking. Per-workflow disable works (`Workflow(name)`), so no fallback is used. Master switch `workflows_off` emits bare `Workflow` and supersedes per-workflow rules.
