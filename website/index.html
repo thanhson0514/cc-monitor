@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ccmon — See what your AI coding agent is doing</title>
-  <meta name="description" content="ccmon is a free, open-source desktop app that shows Claude Code and Codex sessions live: every prompt, tool call, sub-agent, workflow, file change and plan limit. Local and read-only." />
+  <meta name="description" content="ccmon is a free, open-source desktop app that shows Claude Code sessions live: every prompt, tool call, sub-agent, workflow, file change and plan limit. Local and read-only." />
   <meta property="og:title" content="ccmon — See what your AI coding agent is doing" />
-  <meta property="og:description" content="Live monitor for Claude Code and Codex: timeline, sub-agents, workflows, side-by-side diffs, plan usage. Local, read-only, MIT." />
+  <meta property="og:description" content="Live monitor for Claude Code: timeline, sub-agents, workflows, side-by-side diffs, plan usage. Local, read-only, MIT." />
   <meta property="og:image" content="assets/screen-main.png" />
   <link rel="icon" href="assets/favicon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -15,7 +15,7 @@
   <style>
     :root {
       --bg: #0a0b10; --panel: #12131a; --panel-2: #181a23; --border: #23252f; --text: #e8e9ee; --muted: #9196a5;
-      --accent: #8ea2ff; --accent-2: #b48cff; --green: #4ade80; --claude: #f0a46c; --codex: #7cc4f0;
+      --accent: #8ea2ff; --accent-2: #b48cff; --green: #4ade80; --claude: #f0a46c;
     }
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
@@ -55,7 +55,6 @@
     .tools { margin-top: 26px; display: flex; gap: 10px; justify-content: center; font-size: 13px; color: var(--muted); align-items: center; flex-wrap: wrap; }
     .tag { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 6px; }
     .tag.claude { background: #3a2a1f; color: var(--claude); }
-    .tag.codex { background: #1f2f3a; color: var(--codex); }
 
     .shot { margin: 56px auto 0; max-width: 1120px; border-radius: 14px; border: 1px solid var(--border); background: var(--panel); box-shadow: 0 40px 120px -30px rgba(142,162,255,.35), 0 0 0 1px rgba(255,255,255,.03); overflow: hidden; }
     .shot .bar { display: flex; gap: 7px; padding: 11px 14px; border-bottom: 1px solid var(--border); }
@@ -137,7 +136,7 @@
     <div class="wrap">
       <span class="badge"><b>●</b> <span data-i18n="hero.badge">Free &amp; open source · MIT · Windows &amp; Linux</span></span>
       <h1><span data-i18n="hero.t1">See what your</span> <span class="grad" data-i18n="hero.t2">AI coding agent</span> <span data-i18n="hero.t3">is doing — live.</span></h1>
-      <p class="sub" data-i18n="hero.sub">ccmon turns Claude Code and Codex sessions into a clean, real-time view: every prompt, command, file edit, sub-agent and workflow, with side-by-side diffs and plan usage. It only reads what the agents already save on your machine.</p>
+      <p class="sub" data-i18n="hero.sub">ccmon turns Claude Code sessions into a clean, real-time view: every prompt, command, file edit, sub-agent and workflow, with side-by-side diffs and plan usage. It only reads what the agents already save on your machine.</p>
       <div class="cta">
         <a class="btn btn-primary dl" id="dl-win" href="https://github.com/thanhson0514/cc-monitor/releases/latest">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>
@@ -152,7 +151,7 @@
           <span data-i18n="hero.star">Star on GitHub</span>
         </a>
       </div>
-      <div class="tools"><span data-i18n="hero.works">Works with</span> <span class="tag claude">Claude Code</span> <span class="tag codex">Codex</span></div>
+      <div class="tools"><span data-i18n="hero.works">Works with</span> <span class="tag claude">Claude Code</span></div>
       <div class="dl-other" id="dl-other"></div>
       <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-main.png" alt="ccmon main window: session tree, chat timeline with tool cards, file sidebar and status bar" /></div>
     </div>
@@ -192,15 +191,15 @@
 
   <section>
     <div class="wrap split rev">
-      <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-setup.png" alt="First-run setup: choose Claude Code or Codex" /></div>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-setup.png" alt="First-run setup for Claude Code" /></div>
       <div>
-        <div class="eyebrow" data-i18n="s.eyebrow">Two-click setup</div>
-        <h2 data-i18n="s.title">Pick Claude Code, Codex, or both</h2>
-        <p class="lead" data-i18n="s.lead">On first launch ccmon detects which agents are installed and asks which to monitor. Change it any time from ⚙ Settings.</p>
+        <div class="eyebrow" data-i18n="s.eyebrow">One-click setup</div>
+        <h2 data-i18n="s.title">Point it at Claude Code and go</h2>
+        <p class="lead" data-i18n="s.lead">On first launch ccmon finds your Claude Code data and starts watching. Change the options any time from ⚙ Settings.</p>
         <ul class="checks">
-          <li data-i18n="s.c1">Codex: nothing to configure — limits and tokens come from the session itself</li>
+          <li data-i18n="s.c1">Nothing to install in Claude Code: ccmon reads the transcripts it already writes</li>
           <li data-i18n="s.c2">Claude Code: optionally wrap your status line to read plan usage (backed up, one-click undo)</li>
-          <li data-i18n="s.c3">Sessions from both tools side by side, tagged by tool</li>
+          <li data-i18n="s.c3">Every open session in one list, with a live “working” or “waiting” badge</li>
         </ul>
       </div>
     </div>
@@ -211,8 +210,8 @@
       <div class="eyebrow" data-i18n="h.eyebrow">How it works</div>
       <h2 data-i18n="h.title">Nothing to change in how you work</h2>
       <div class="steps">
-        <div class="step"><h3 data-i18n="h1.t">Keep using your agent</h3><p data-i18n="h1.d">Run Claude Code or Codex in the terminal or your editor, exactly as today.</p></div>
-        <div class="step"><h3 data-i18n="h2.t">ccmon reads the transcript</h3><p data-i18n="h2.d">It tails <code>~/.claude/projects</code> and <code>~/.codex/sessions</code> (about 0.4 s latency) and builds the thread tree.</p></div>
+        <div class="step"><h3 data-i18n="h1.t">Keep using your agent</h3><p data-i18n="h1.d">Run Claude Code in the terminal or your editor, exactly as today.</p></div>
+        <div class="step"><h3 data-i18n="h2.t">ccmon reads the transcript</h3><p data-i18n="h2.d">It tails <code>~/.claude/projects</code> (about 0.4 s latency) and builds the thread tree.</p></div>
         <div class="step"><h3 data-i18n="h3.t">Watch, review, follow up</h3><p data-i18n="h3.d">See each step as it happens, open sub-agents, review diffs and files, then go back to your agent.</p></div>
       </div>
     </div>
@@ -229,7 +228,7 @@
           <ol>
             <li data-i18n="i.w1">Download <code>ccmon_x.y.z_x64-setup.exe</code> from the latest release.</li>
             <li data-i18n="i.w2">Run it — installs for your user only, no admin rights needed. WebView2 is installed automatically if missing.</li>
-            <li data-i18n="i.w3">Open <b>ccmon</b> from the Start menu and choose your tools.</li>
+            <li data-i18n="i.w3">Open <b>ccmon</b> from the Start menu and click <b>Start</b>.</li>
           </ol>
         </div>
         <div class="pane" id="tab-linux">
@@ -252,10 +251,10 @@ cargo run --release -p cc-monitor   # terminal UI</code></pre>
     <div class="wrap">
       <div class="eyebrow">FAQ</div>
       <h2 data-i18n="q.title">Questions</h2>
-      <details><summary data-i18n="q1.q">Is ccmon made by Anthropic or OpenAI?</summary><p data-i18n="q1.a">No. ccmon is an independent community project. Claude Code is a product of Anthropic and Codex of OpenAI; ccmon is not affiliated with or endorsed by either.</p></details>
+      <details><summary data-i18n="q1.q">Is ccmon made by Anthropic?</summary><p data-i18n="q1.a">No. ccmon is an independent community project. Claude Code is a product of Anthropic; ccmon is not affiliated with or endorsed by Anthropic.</p></details>
       <details><summary data-i18n="q2.q">Does it send my code or prompts anywhere?</summary><p data-i18n="q2.a">No. Everything stays on your machine. ccmon makes no network requests and has no telemetry.</p></details>
       <details><summary data-i18n="q3.q">Can it change my sessions or settings?</summary><p data-i18n="q3.a">It only reads. The single exception is opt-in: wrapping Claude Code's status line to read plan usage, which backs up settings.json and can be undone from Settings.</p></details>
-      <details><summary data-i18n="q4.q">Why can't I see the model's full thinking?</summary><p data-i18n="q4.a">Claude Code and Codex store reasoning encrypted or omit it from transcripts. ccmon shows what is saved: short progress notes and thinking time.</p></details>
+      <details><summary data-i18n="q4.q">Why can't I see the model's full thinking?</summary><p data-i18n="q4.a">Claude Code stores reasoning encrypted or omits it from transcripts. ccmon shows what is saved: short progress notes and thinking time.</p></details>
       <details><summary data-i18n="q5.q">Can I use it commercially or modify it?</summary><p data-i18n="q5.a">Yes — MIT license. To change the code, please fork the repository and open a pull request, or report problems as issues.</p></details>
     </div>
   </section>
@@ -263,7 +262,7 @@ cargo run --release -p cc-monitor   # terminal UI</code></pre>
   <footer>
     <div class="wrap">
       <div>© 2026 Lê Thanh Sơn · <a href="https://github.com/thanhson0514/cc-monitor/blob/main/LICENSE">MIT License</a></div>
-      <div data-i18n="foot.tm">Claude Code is a trademark of Anthropic. Codex is a trademark of OpenAI. Not affiliated.</div>
+      <div data-i18n="foot.tm">Claude Code is a trademark of Anthropic. Not affiliated.</div>
       <div><a href="https://github.com/thanhson0514/cc-monitor/issues" data-i18n="foot.issue">Report an issue</a></div>
     </div>
   </footer>
@@ -273,7 +272,7 @@ cargo run --release -p cc-monitor   # terminal UI</code></pre>
       'nav.features': 'Tính năng', 'nav.install': 'Cài đặt',
       'hero.badge': 'Miễn phí & mã nguồn mở · MIT · Windows & Linux',
       'hero.t1': 'Xem', 'hero.t2': 'AI coding agent', 'hero.t3': 'đang làm gì — theo thời gian thực.',
-      'hero.sub': 'ccmon biến các phiên Claude Code và Codex thành một màn hình gọn gàng, cập nhật trực tiếp: từng prompt, lệnh, file đã sửa, subagent và workflow, kèm diff hai cột và hạn mức gói. Ứng dụng chỉ đọc những gì agent đã tự lưu trên máy bạn.',
+      'hero.sub': 'ccmon biến các phiên Claude Code thành một màn hình gọn gàng, cập nhật trực tiếp: từng prompt, lệnh, file đã sửa, subagent và workflow, kèm diff hai cột và hạn mức gói. Ứng dụng chỉ đọc những gì agent đã tự lưu trên máy bạn.',
       'hero.download': 'Tải về', 'hero.star': 'Star trên GitHub', 'hero.works': 'Hỗ trợ',
       'f.eyebrow': 'Tính năng', 'f.title': 'Mọi việc agent làm, trong một cửa sổ',
       'f.lead': 'Thôi cuộn terminal để đoán chuyện gì đã xảy ra. ccmon theo dõi phiên chính và mọi agent nó tạo ra, ngay khi chúng làm việc.',
@@ -286,26 +285,26 @@ cargo run --release -p cc-monitor   # terminal UI</code></pre>
       'd.eyebrow': 'Xem thay đổi', 'd.title': 'Chính xác đã sửa những gì?', 'd.lead': 'Mở “Thay đổi” để xem mọi file phiên đã đụng vào và so sánh từng file hai cột.',
       'd.c1': 'Bản gốc “trước phiên” lấy từ bản sao lưu file của chính Claude Code — không cần git',
       'd.c2': 'Chuyển sang so với git HEAD khi file nằm trong repo', 'd.c3': 'Gấp đoạn không đổi, tô màu cú pháp',
-      's.eyebrow': 'Thiết lập hai cú nhấp', 's.title': 'Chọn Claude Code, Codex, hoặc cả hai',
-      's.lead': 'Lần mở đầu tiên, ccmon tự dò công cụ đã cài và hỏi bạn muốn theo dõi cái nào. Đổi lại bất cứ lúc nào ở ⚙ Cài đặt.',
-      's.c1': 'Codex: không cần cấu hình — hạn mức và token lấy thẳng từ phiên',
-      's.c2': 'Claude Code: tuỳ chọn bọc status line để đọc hạn mức (có sao lưu, gỡ một chạm)', 's.c3': 'Phiên của cả hai công cụ cạnh nhau, gắn nhãn theo công cụ',
+      's.eyebrow': 'Thiết lập một cú nhấp', 's.title': 'Trỏ vào Claude Code là chạy',
+      's.lead': 'Lần mở đầu tiên, ccmon tự tìm dữ liệu Claude Code và bắt đầu theo dõi. Đổi tuỳ chọn bất cứ lúc nào ở ⚙ Cài đặt.',
+      's.c1': 'Không phải cài gì vào Claude Code: ccmon đọc transcript mà nó vốn đã ghi',
+      's.c2': 'Claude Code: tuỳ chọn bọc status line để đọc hạn mức (có sao lưu, gỡ một chạm)', 's.c3': 'Mọi phiên đang mở trong một danh sách, có nhãn “đang làm” hoặc “chờ” cập nhật trực tiếp',
       'h.eyebrow': 'Cách hoạt động', 'h.title': 'Không phải đổi cách bạn làm việc',
-      'h1.t': 'Dùng agent như thường', 'h1.d': 'Chạy Claude Code hoặc Codex trong terminal hay editor, y như hiện tại.',
-      'h2.t': 'ccmon đọc transcript', 'h2.d': 'Theo dõi <code>~/.claude/projects</code> và <code>~/.codex/sessions</code> (trễ khoảng 0,4 giây) và dựng cây luồng.',
+      'h1.t': 'Dùng agent như thường', 'h1.d': 'Chạy Claude Code trong terminal hay editor, y như hiện tại.',
+      'h2.t': 'ccmon đọc transcript', 'h2.d': 'Theo dõi <code>~/.claude/projects</code> (trễ khoảng 0,4 giây) và dựng cây luồng.',
       'h3.t': 'Theo dõi, xem lại, làm tiếp', 'h3.d': 'Xem từng bước khi nó diễn ra, mở subagent, xem diff và file, rồi quay lại agent.',
       'i.eyebrow': 'Cài đặt', 'i.title': 'Tải về và chạy', 'i.lead': 'Bộ cài được GitHub Actions build cho mỗi bản phát hành.', 'i.src': 'Từ mã nguồn',
       'i.w1': 'Tải <code>ccmon_x.y.z_x64-setup.exe</code> ở bản phát hành mới nhất.',
       'i.w2': 'Chạy file — cài cho riêng tài khoản của bạn, không cần quyền admin. WebView2 tự cài nếu máy chưa có.',
-      'i.w3': 'Mở <b>ccmon</b> từ Start menu và chọn công cụ.',
+      'i.w3': 'Mở <b>ccmon</b> từ Start menu rồi bấm <b>Bắt đầu</b>.',
       'i.l1': 'Tải <code>ccmon_x.y.z_amd64.deb</code> ở bản phát hành mới nhất (Debian, Ubuntu và các bản dựa trên chúng).', 'i.l2': 'Cài đặt rồi mở <b>ccmon</b> từ menu ứng dụng:',
       'q.title': 'Câu hỏi thường gặp',
-      'q1.q': 'ccmon có phải của Anthropic hay OpenAI không?', 'q1.a': 'Không. ccmon là dự án cộng đồng độc lập. Claude Code là sản phẩm của Anthropic, Codex của OpenAI; ccmon không liên kết và không được hai công ty bảo trợ.',
+      'q1.q': 'ccmon có phải của Anthropic không?', 'q1.a': 'Không. ccmon là dự án cộng đồng độc lập. Claude Code là sản phẩm của Anthropic; ccmon không liên kết và không được Anthropic bảo trợ.',
       'q2.q': 'Ứng dụng có gửi code hay prompt của tôi đi đâu không?', 'q2.a': 'Không. Mọi thứ ở lại trên máy bạn. ccmon không gọi mạng và không có telemetry.',
       'q3.q': 'Nó có sửa phiên hay cài đặt của tôi không?', 'q3.a': 'Chỉ đọc. Ngoại lệ duy nhất là tuỳ chọn: bọc status line của Claude Code để đọc hạn mức — có sao lưu settings.json và gỡ được trong Cài đặt.',
-      'q4.q': 'Sao không xem được toàn bộ phần suy nghĩ của model?', 'q4.a': 'Claude Code và Codex lưu phần suy luận ở dạng mã hoá hoặc không lưu vào transcript. ccmon hiện những gì có: ghi chú tiến độ ngắn và thời gian suy nghĩ.',
+      'q4.q': 'Sao không xem được toàn bộ phần suy nghĩ của model?', 'q4.a': 'Claude Code lưu phần suy luận ở dạng mã hoá hoặc không lưu vào transcript. ccmon hiện những gì có: ghi chú tiến độ ngắn và thời gian suy nghĩ.',
       'q5.q': 'Tôi có được dùng thương mại hay sửa code không?', 'q5.a': 'Có — giấy phép MIT. Muốn sửa code, hãy fork repo và mở pull request, hoặc báo lỗi qua issue.',
-      'foot.tm': 'Claude Code là thương hiệu của Anthropic. Codex là thương hiệu của OpenAI. Không liên kết.', 'foot.issue': 'Báo lỗi'
+      'foot.tm': 'Claude Code là thương hiệu của Anthropic. Không liên kết.', 'foot.issue': 'Báo lỗi'
     };
     const EN = {};
     document.querySelectorAll('[data-i18n]').forEach((el) => (EN[el.dataset.i18n] = el.innerHTML));
