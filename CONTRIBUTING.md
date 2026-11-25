@@ -41,6 +41,9 @@ python3 demo/make_demo.py /tmp/ccmon-demo   # prints env vars to export
 | `website/` | Landing page (GitHub Pages) |
 | `demo/` | Demo data generator used for screenshots and CI smoke tests |
 
+Architecture notes: [capability catalog and control layer](docs/architecture/capabilities.md)
+(how to add a new capability kind) and [CLI flag spike](docs/architecture/control.md).
+
 ## Pull request checklist
 
 - [ ] `cargo test --workspace` passes, `cd gui/ui && yarn typecheck` passes
