@@ -10,6 +10,7 @@
 mod assets;
 mod changes;
 
+use cc_monitor::bgtask::{BgKind, BgState, BgTask};
 use cc_monitor::config::{self, SharedConfig};
 use cc_monitor::discovery::{self, Key, Msg, Pinned, ScanOpts};
 use cc_monitor::metrics;
@@ -18,7 +19,7 @@ use cc_monitor::thread::{Item, ThreadLink, ToolState};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -156,6 +157,56 @@ impl From<&TreeRow> for TreeRowDto {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct BgTaskDto {
+    id: String,
+    kind: &'static str,
+    label: String,
+    state: &'static str,
+    started: Option<i64>,
+    ended: Option<i64>,
+    summary: Option<String>,
+    output_file: Option<String>,
+}
+
+impl BgTaskDto {
+    /// `open` = the owning session is live or recently written. A `Running` task of a
+    /// session that is not open is reported as `unknown` (finalization is not timer-driven).
+    fn from_task(t: &BgTask, open: bool) -> Self {
+        Self {
+            id: t.id.clone(),
+            kind: match t.kind {
+                BgKind::Shell => "shell",
+                BgKind::Monitor => "monitor",
+                BgKind::Agent => "agent",
+                BgKind::Workflow => "workflow",
+            },
+            label: t.label.clone(),
+            state: match t.state {
+                BgState::Running if open => "running",
+                BgState::Running | BgState::Unknown => "unknown",
+                BgState::Completed => "completed",
+                BgState::Failed => "failed",
+                BgState::Killed => "killed",
+            },
+            started: t.started,
+            ended: t.ended,
+            summary: t.summary.clone(),
+            output_file: t.output_file.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TailDto {
+    text: String,
+    truncated: bool,
+    gone: bool,
+    size: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct LinkDto {
     kind: &'static str,
     key: Option<String>,
@@ -207,6 +258,9 @@ enum ItemDto {
         result_preview: String,
         has_more: bool,
         link: Option<LinkDto>,
+        bg: Option<BgTaskDto>,
+        waits: Vec<BgTaskDto>,
+        woke_by: Option<String>,
     },
     Compact {
         idx: usize,
@@ -374,6 +428,13 @@ fn get_thread(state: State<Shared>, key: String, tail: Option<usize>) -> Option<
                     }
                 });
                 let (result_preview, has_more) = clip(&t.result, PREVIEW);
+                let open = store.session_is_open(&sid, now);
+                let bg = t.bg.as_ref().map(|b| BgTaskDto::from_task(b, open));
+                let waits = t
+                    .waits
+                    .iter()
+                    .map(|b| BgTaskDto::from_task(b, open))
+                    .collect();
                 ItemDto::Tool {
                     idx,
                     prompt: t
@@ -403,6 +464,9 @@ fn get_thread(state: State<Shared>, key: String, tail: Option<usize>) -> Option<
                     result_preview,
                     has_more: has_more || t.persisted.is_some(),
                     link,
+                    bg,
+                    waits,
+                    woke_by: t.woke_by,
                 }
             }
         });
@@ -667,6 +731,22 @@ fn get_diff(
     ))
 }
 
+/// Last bytes of a background task's output file. Only `*/tasks/*.output` under the
+/// temp dir or `/tmp/claude-*` are read (see `cc_monitor::tasktail`); anything else is `gone`.
+#[tauri::command]
+fn tail_task_output(path: String, max: Option<u64>) -> TailDto {
+    let t = cc_monitor::tasktail::tail_task_output(
+        Path::new(&path),
+        max.unwrap_or(cc_monitor::tasktail::TAIL_MAX),
+    );
+    TailDto {
+        text: t.text,
+        truncated: t.truncated,
+        gone: t.gone,
+        size: t.size,
+    }
+}
+
 #[tauri::command]
 fn preview_file(path: String) -> assets::Preview {
     assets::preview(&path)
@@ -845,7 +925,8 @@ fn main() {
             save_setup,
             remove_statusline,
             get_diff,
-            preview_file
+            preview_file,
+            tail_task_output
         ])
         .run(tauri::generate_context!())
         .expect("không khởi động được ccmon GUI");

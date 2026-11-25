@@ -158,6 +158,19 @@ def claude_session():
            f"Saved {shot}", took=3.1)
     t.tool("t8", "Workflow", {"script": "export const meta = {\n  name: 'review-checkout',\n  description: 'Review thay đổi checkout',\n}"},
            500, "msg_09", "Workflow launched in background.", tur={"runId": "wf_demo01", "workflowName": "review-checkout", "status": "async_launched"}, took=0.4)
+    # background Bash + Yield + completion notice (output file under a `tasks/` dir)
+    bg_out = os.path.join(tmp, "tasks", "bgdemo01.output")
+    write(bg_out, "\n".join(f"[{i:02d}] webpack compiled successfully" for i in range(1, 31)) + "\n")
+    t.tool("t10", "Bash", {"command": "npm run dev", "description": "Chạy dev server", "run_in_background": True}, 480, "msg_09b",
+           "Command running in background with ID: bgdemo01. Output is being written to: " + bg_out,
+           tur={"backgroundTaskId": "bgdemo01"}, took=0.3)
+    t.tool("t11", "Yield", {}, 470, "msg_09c", "Yielded.", took=90)
+    n = t._base("attachment", 380)
+    n["attachment"] = {"type": "queued_command", "commandMode": "task-notification", "prompt": (
+        "<task-notification>\n<task-id>bgdemo01</task-id>\n<tool-use-id>t10</tool-use-id>\n"
+        f"<output-file>{bg_out}</output-file>\n<status>completed</status>\n"
+        "<summary>Background command &quot;Chạy dev server&quot; completed (exit code 0)</summary>\n</task-notification>")}
+    t.raw(n)
     t.assistant([{"type": "text", "text": (
         "Đã thêm thanh toán QR:\n\n"
         "| File | Thay đổi |\n|---|---|\n"

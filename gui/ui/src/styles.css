@@ -357,3 +357,14 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .btn { padding: 7px 16px; border-radius: 8px; border: 1px solid var(--border); }
 .btn-primary { background: var(--accent); color: #0b0c10; border-color: var(--accent); font-weight: 600; }
 .btn:disabled { opacity: .5; cursor: default; }
+
+/* background tasks */
+.bgtask { border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; margin-top: 4px; }
+.bgtask-head { display: flex; align-items: center; gap: 8px; }
+.bgtask-icon { flex: none; }
+.bgtask-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bgtask-state { font-size: 11px; flex: none; }
+.bgs-running { color: var(--accent); } .bgs-completed { color: var(--green); } .bgs-failed { color: var(--red); }
+.bgs-killed, .bgs-unknown { color: var(--muted); }
+.bgtask .more-lines { padding-left: 0; }
+.bg-out { margin-top: 4px; }

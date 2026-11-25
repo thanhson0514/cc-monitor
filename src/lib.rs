@@ -11,5 +11,6 @@ pub mod platform;
 pub mod setup;
 pub mod store;
 pub mod tail;
+pub mod tasktail;
 pub mod tee;
 pub mod thread;

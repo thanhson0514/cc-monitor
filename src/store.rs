@@ -275,6 +275,14 @@ impl Store {
         }
     }
 
+    /// Session is live (open process) or written within [`ACTIVE_MS`]; background tasks of
+    /// a session that is not open can no longer be known to run.
+    pub fn session_is_open(&self, sid: &str, now: i64) -> bool {
+        self.sessions
+            .get(sid)
+            .is_some_and(|s| s.live.is_some() || now - s.mtime < ACTIVE_MS)
+    }
+
     pub fn session_status(&self, sid: &str, now: i64) -> Status {
         let Some(s) = self.sessions.get(sid) else {
             return Status::Idle;

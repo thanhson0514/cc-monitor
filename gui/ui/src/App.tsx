@@ -309,6 +309,16 @@ function activityOf(view: ThreadView | null, row: TreeRow | undefined, rows: Tre
     }
     const running = [...items].reverse().find((it): it is Extract<typeof it, { type: 'tool' }> => it.type === 'tool' && it.state === 'running');
     if (running) {
+        if (running.name === 'Yield') {
+            const names = running.waits.map((w) => w.label);
+            const shown = names.slice(0, 2).join(', ');
+            const more = names.length > 2 ? ` (+${names.length - 2})` : '';
+            return {
+                state: 'busy',
+                text: names.length ? `Đang chờ: ${shown}${more}` : 'Đang chờ tác vụ nền',
+                since: running.started ?? turnStart
+            };
+        }
         if (running.link)
             return {
                 state: 'busy',

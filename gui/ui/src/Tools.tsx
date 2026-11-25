@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import hljs from 'highlight.js/lib/common';
 import { api, fmtDur, Item, ToolDetail } from './api';
+import { BgTaskView, YieldBody } from './BgTask';
 
 export type ToolItem = Extract<Item, { type: 'tool' }>;
 
@@ -39,10 +40,23 @@ export function PathLabel({ path }: { path: string }) {
     );
 }
 
-function Code({ code, lang, maxLines, numbered }: { code: string; lang?: string; maxLines: number; numbered?: boolean }) {
+export function Code({
+    code,
+    lang,
+    maxLines,
+    numbered,
+    fromEnd
+}: {
+    code: string;
+    lang?: string;
+    maxLines: number;
+    numbered?: boolean;
+    /** Collapsed view shows the last `maxLines` lines instead of the first (for logs). */
+    fromEnd?: boolean;
+}) {
     const [all, setAll] = useState(false);
     const lines = code.replace(/\n$/, '').split('\n');
-    const shown = all ? lines : lines.slice(0, maxLines);
+    const shown = all ? lines : fromEnd ? lines.slice(-maxLines) : lines.slice(0, maxLines);
     const html = highlight(shown.join('\n'), lang);
     return (
         <div className="tcode">
@@ -184,6 +198,45 @@ export function ToolCard({ tool, threadKey, now }: { tool: ToolItem; threadKey: 
             title = str(input.description) ?? cmd.split('\n')[0];
             body = <Code code={cmd} lang={tool.name === 'Bash' ? 'bash' : 'powershell'} maxLines={4} />;
             if (input.run_in_background) badge = <span className="tbadge">nền</span>;
+            if (tool.bg) {
+                body = (
+                    <>
+                        {body}
+                        <BgTaskView task={tool.bg} now={now} />
+                    </>
+                );
+                // The launch result ("Command running in background…") is replaced by the real state.
+                showOutput = tool.state === 'error';
+            }
+            break;
+        }
+        case 'Yield': {
+            const n = tool.waits.length;
+            title = n === 0 ? 'Không có tác vụ nền đang chạy' : n === 1 ? `Chờ: ${tool.waits[0].label}` : `Chờ ${n} tác vụ nền`;
+            body = <YieldBody tool={tool} now={now} />;
+            showOutput = false;
+            break;
+        }
+        case 'Monitor': {
+            const { description: _d, ...rest } = input;
+            title = str(input.description) ?? tool.summary;
+            badge = <span className="tbadge">monitor</span>;
+            body = (
+                <>
+                    <KeyValues input={rest} />
+                    {tool.bg && <BgTaskView task={tool.bg} now={now} />}
+                </>
+            );
+            break;
+        }
+        case 'TaskOutput':
+        case 'BashOutput':
+        case 'TaskStop':
+        case 'KillShell': {
+            const stop = tool.name === 'TaskStop' || tool.name === 'KillShell';
+            const label = tool.bg?.label ?? str(input.task_id) ?? str(input.bash_id) ?? str(input.shell_id) ?? '';
+            title = `${stop ? 'Dừng' : 'Đọc output'}: ${label}`;
+            if (tool.bg) body = <BgTaskView task={tool.bg} now={now} />;
             break;
         }
         case 'Edit': {

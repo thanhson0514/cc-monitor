@@ -27,6 +27,24 @@ export interface LinkInfo {
     report: string | null;
 }
 
+export interface BgTask {
+    id: string;
+    kind: 'shell' | 'monitor' | 'agent' | 'workflow';
+    label: string;
+    state: 'running' | 'completed' | 'failed' | 'killed' | 'unknown';
+    started: number | null;
+    ended: number | null;
+    summary: string | null;
+    outputFile: string | null;
+}
+
+export interface TailDto {
+    text: string;
+    truncated: boolean;
+    gone: boolean;
+    size: number;
+}
+
 export type Item =
     | { type: 'prompt'; idx: number; ts: number | null; text: string }
     | { type: 'turn'; idx: number; ts: number | null; model: string | null; input: number; output: number }
@@ -47,6 +65,9 @@ export type Item =
           resultPreview: string;
           hasMore: boolean;
           link: LinkInfo | null;
+          bg: BgTask | null;
+          waits: BgTask[];
+          wokeBy: string | null;
       }
     | { type: 'compact'; idx: number; ts: number | null; pre: number; post: number }
     | { type: 'system'; idx: number; ts: number | null; text: string };
@@ -204,6 +225,7 @@ export const api = {
     history: (days: number) => invoke<HistoryProject[]>('list_history', { days }),
     openSession: (sid: string) => invoke<void>('open_session', { sid }),
     assets: (key: string, scope: 'session' | 'thread') => invoke<Assets | null>('get_assets', { key, scope }),
+    tailTaskOutput: (path: string) => invoke<TailDto>('tail_task_output', { path }),
     preview: (path: string) => invoke<Preview>('preview_file', { path }),
     changes: (key: string) => invoke<ChangedFile[] | null>('get_changes', { key }),
     diff: (key: string, path: string, baseline: string | null) => invoke<DiffView | null>('get_diff', { key, path, baseline })
