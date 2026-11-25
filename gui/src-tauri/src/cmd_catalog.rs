@@ -1,7 +1,7 @@
 //! Tauri commands for the capability catalog (Library page).
 
 use cc_monitor::catalog::usage::{inventory_only, session_usage, UseState};
-use cc_monitor::catalog::{CapKind, Capability, Catalog, Scope, ScanCtx};
+use cc_monitor::catalog::{CapKind, Capability, Catalog, ScanCtx, Scope};
 use cc_monitor::platform;
 use cc_monitor::thread::Thread;
 use serde::Serialize;
@@ -61,7 +61,13 @@ pub fn usage_dto(kind: CapKind, id: &str, st: &UseState) -> UsageDto {
         UseState::Available => ("available", 0, None),
         UseState::Used { count, last } => ("used", *count, *last),
     };
-    UsageDto { kind, id: id.to_string(), state, count, last }
+    UsageDto {
+        kind,
+        id: id.to_string(),
+        state,
+        count,
+        last,
+    }
 }
 
 fn scan_ctx(cwd: Option<&str>) -> ScanCtx {
@@ -70,7 +76,11 @@ fn scan_ctx(cwd: Option<&str>) -> ScanCtx {
         .parent()
         .map(|p| p.join(".claude.json"))
         .unwrap_or_else(|| PathBuf::from(".claude.json"));
-    ScanCtx { claude_home, claude_json, cwd: cwd.filter(|c| !c.is_empty()).map(PathBuf::from) }
+    ScanCtx {
+        claude_home,
+        claude_json,
+        cwd: cwd.filter(|c| !c.is_empty()).map(PathBuf::from),
+    }
 }
 
 type CatalogCache = Mutex<HashMap<Option<String>, (Instant, Catalog)>>;
@@ -86,7 +96,10 @@ fn catalog_for(cwd: Option<&str>) -> Catalog {
         }
     }
     let cat = Catalog::scan(&scan_ctx(cwd));
-    cache.lock().unwrap().insert(key, (Instant::now(), cat.clone()));
+    cache
+        .lock()
+        .unwrap()
+        .insert(key, (Instant::now(), cat.clone()));
     cat
 }
 
@@ -95,7 +108,12 @@ fn catalog_for(cwd: Option<&str>) -> Catalog {
 /// capabilities it announced or used that have no file on disk.
 pub fn listing(catalog: &Catalog, threads: &[&Thread]) -> Vec<CapabilityDto> {
     let extra = inventory_only(threads, catalog);
-    catalog.items.iter().chain(extra.iter()).map(CapabilityDto::from).collect()
+    catalog
+        .items
+        .iter()
+        .chain(extra.iter())
+        .map(CapabilityDto::from)
+        .collect()
 }
 
 /// Session cwd taken from the store only (never from the webview), so project
@@ -108,7 +126,9 @@ fn session_cwd(state: &Shared, sid: &str) -> Option<String> {
 /// Main thread plus every subagent and workflow-agent thread of a session
 /// (workflow agents live in `Session::agents` with a `run_id`).
 fn session_threads<'a>(store: &'a cc_monitor::store::Store, sid: &str) -> Vec<&'a Thread> {
-    let Some(sess) = store.sessions.get(sid) else { return Vec::new() };
+    let Some(sess) = store.sessions.get(sid) else {
+        return Vec::new();
+    };
     let mut threads: Vec<&Thread> = vec![&sess.main];
     threads.extend(sess.agents.values().map(|a| &a.thread));
     threads
@@ -120,7 +140,10 @@ pub fn get_catalog(state: State<Shared>, sid: Option<String>) -> Vec<CapabilityD
     let cwd = sid.as_deref().and_then(|s| session_cwd(&state, s));
     let catalog = catalog_for(cwd.as_deref());
     let store = state.store.lock().unwrap();
-    let threads = sid.as_deref().map(|s| session_threads(&store, s)).unwrap_or_default();
+    let threads = sid
+        .as_deref()
+        .map(|s| session_threads(&store, s))
+        .unwrap_or_default();
     listing(&catalog, &threads)
 }
 
@@ -180,7 +203,10 @@ mod tests {
     fn usage_dto_states() {
         let u = |s| serde_json::to_value(usage_dto(CapKind::Skill, "s", &s)).unwrap();
         assert_eq!(
-            u(UseState::Used { count: 3, last: Some(9) }),
+            u(UseState::Used {
+                count: 3,
+                last: Some(9)
+            }),
             json!({"kind":"skill","id":"s","state":"used","count":3,"last":9})
         );
         assert_eq!(u(UseState::Available)["state"], json!("available"));
@@ -208,11 +234,17 @@ mod tests {
         let t = thread(&[inv]);
         let catalog = Catalog::default();
         let items = listing(&catalog, &[&t]);
-        let c = items.iter().find(|c| c.id == "claude.ai Docs").expect("announced mcp listed");
+        let c = items
+            .iter()
+            .find(|c| c.id == "claude.ai Docs")
+            .expect("announced mcp listed");
         assert_eq!(serde_json::to_value(c).unwrap()["scope"], json!("managed"));
         assert_eq!(c.path, None);
         let u = usage_dtos(&[&t], &catalog);
-        assert_eq!(u.iter().find(|u| u.id == "claude.ai Docs").unwrap().state, "available");
+        assert_eq!(
+            u.iter().find(|u| u.id == "claude.ai Docs").unwrap().state,
+            "available"
+        );
 
         let call = r#"{"type":"assistant","uuid":"u","timestamp":"2026-11-25T00:00:01.000Z","message":{"id":"m","role":"assistant","content":[{"type":"tool_use","id":"t","name":"mcp__claude_ai_Docs__read","input":{}}]}}"#;
         let t2 = thread(&[inv, call]);
