@@ -2,6 +2,7 @@
 //! subagents and workflows. Shared by the TUI (`ccmon`) and the GUI (`gui/`).
 
 pub mod bgtask;
+pub mod catalog;
 pub mod codex;
 pub mod config;
 pub mod discovery;
