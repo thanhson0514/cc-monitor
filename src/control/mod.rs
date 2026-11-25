@@ -17,6 +17,8 @@ pub struct Overlay {
     pub disabled_plugins: BTreeSet<String>,
     pub disabled_mcp: BTreeSet<String>,
     pub disabled_agents: BTreeSet<String>,
+    pub disabled_workflows: BTreeSet<String>,
+    /// Master switch set by the user; never derived from the registry.
     pub workflows_off: bool,
     pub main_agent: Option<String>, // --agent
 }

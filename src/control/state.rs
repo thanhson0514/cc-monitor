@@ -24,14 +24,12 @@ pub fn save_registry(r: &Registry) -> io::Result<()> {
 }
 
 /// Merge ccmon-wide switches into a session overlay. The overlay's
-/// `workflows_off` is a single bool, so any globally disabled workflow
-/// turns workflows off for the launch.
+/// `workflows_off` stays a user-set master switch and is never derived.
 pub fn effective(o: &Overlay, r: &Registry) -> Overlay {
     let mut e = o.clone();
     e.disabled_agents.extend(r.disabled_agents.iter().cloned());
-    if !r.disabled_workflows.is_empty() {
-        e.workflows_off = true;
-    }
+    e.disabled_workflows
+        .extend(r.disabled_workflows.iter().cloned());
     e
 }
 
@@ -49,7 +47,9 @@ fn write_atomic<T: serde::Serialize>(p: &Path, v: &T) -> io::Result<()> {
         .ok_or_else(|| io::Error::other("no parent dir"))?;
     std::fs::create_dir_all(dir)?;
     let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("state");
-    let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = dir.join(format!(".{name}.{}.{seq}.tmp", std::process::id()));
     let body = serde_json::to_vec_pretty(v).map_err(io::Error::other)?;
     let res = std::fs::write(&tmp, body).and_then(|_| std::fs::rename(&tmp, p));
     if res.is_err() {
@@ -175,6 +175,8 @@ mod tests {
             disabled_workflows: ["w".to_string()].into(),
             ..Default::default()
         };
-        assert!(effective(&o, &r2).workflows_off);
+        let e2 = effective(&o, &r2);
+        assert!(!e2.workflows_off);
+        assert_eq!(e2.disabled_workflows, ["w".to_string()].into());
     }
 }
