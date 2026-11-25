@@ -386,8 +386,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .lib-filter { margin-left: auto; width: 240px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 10px; font: inherit; font-size: 12px; }
 .lib-filter:focus { outline: none; border-color: #333a66; }
 .lib-list { overflow-y: auto; flex: 1; padding: 6px 20px 20px; }
-.lib-head, .lib-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 3fr) 120px 90px 120px 56px; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.lib-head, .lib-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 3fr) 120px 90px 100px 116px; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .lib-head { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); position: sticky; top: 0; background: var(--bg); }
+.lib-head > span { white-space: nowrap; }
 .lib-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lib-desc { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chip { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

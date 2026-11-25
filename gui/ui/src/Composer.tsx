@@ -170,6 +170,8 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
     const [drawer, setDrawer] = useState(false);
     const sidRef = useRef(sid);
     sidRef.current = sid;
+    const writes = useRef<Promise<void>>(Promise.resolve());
+    const writeSeq = useRef(0);
     const input = useRef<HTMLTextAreaElement>(null);
     const [agents, setAgents] = useState<AgentItem[]>([]);
     const [at, setAt] = useState<{ start: number; q: string } | null>(null);
@@ -195,6 +197,9 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
             .catch((e) => setErr(String(e)));
     }, []);
 
+    // Reset only when the session identity changes: a just-started session keeps its
+    // Composer (and any typed text) when its tree row appears and `cwd` drops to null.
+    const ident = sid ?? `new:${cwd ?? ''}`;
     useEffect(() => {
         setDto(null);
         setDraft(null);
@@ -210,7 +215,7 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
             clearInterval(t);
             un.then((f) => f());
         };
-    }, [sid, cwd, load]);
+    }, [ident, load]);
 
     const overlay = (sid ? dto?.overlay : draft) ?? EMPTY_OVERLAY;
     const runState = dto?.runState ?? null;
@@ -225,9 +230,16 @@ export function Composer({ sid, cwd, onStarted }: { sid: string | null; cwd: str
             return;
         }
         setDto((d) => (d ? { ...d, overlay: o } : d));
-        api.setOverlay(sid, o)
-            .then(setDto)
+        // One write at a time, in click order, so the last click is what gets saved;
+        // only the newest request's answer updates the UI (no flicker back).
+        const seq = ++writeSeq.current;
+        writes.current = writes.current
+            .then(() => api.setOverlay(sid, o))
+            .then((d) => {
+                if (seq === writeSeq.current && sidRef.current === sid) setDto(d);
+            })
             .catch((e) => {
+                if (sidRef.current !== sid) return;
                 setErr(String(e));
                 load();
             });

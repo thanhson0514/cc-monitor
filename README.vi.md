@@ -9,6 +9,7 @@
 Ứng dụng desktop miễn phí, mã nguồn mở, biến các phiên **Claude Code** thành một màn hình gọn
 gàng, cập nhật trực tiếp: từng prompt, lệnh, file đã sửa, subagent và workflow, kèm diff hai cột
 và hạn mức gói. Local; read-only trừ khi bạn chủ động chạy session từ ccmon.
+Trang Agents ghi file agent bạn tạo hoặc sửa (sau khi bạn xác nhận) vào `~/.claude/agents` hoặc `.claude/agents` của project.
 
 [**Tải về**](https://github.com/wik1ngst-1103/cc-monitor/releases/latest) ·
 [Website](https://wik1ngst-1103.github.io/cc-monitor) ·

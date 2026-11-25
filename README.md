@@ -9,6 +9,7 @@
 A free, open-source desktop app that turns **Claude Code** sessions into a clean,
 real-time view: every prompt, command, file edit, sub-agent and workflow, with side-by-side diffs
 and plan usage. Local; read-only unless you choose to run a session from ccmon.
+The Agents page writes the agent files you create or edit (after you confirm) into `~/.claude/agents` or the project's `.claude/agents`.
 
 [![CI](https://github.com/wik1ngst-1103/cc-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/wik1ngst-1103/cc-monitor/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/wik1ngst-1103/cc-monitor?include_prereleases&sort=semver)](https://github.com/wik1ngst-1103/cc-monitor/releases)

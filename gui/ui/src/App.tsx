@@ -12,6 +12,8 @@ import { AppHeader, AssetsIcon, DiffIcon, HeadIconBtn, Page, PAGE_TITLE } from '
 import logo from './assets/logo.png';
 
 const PAGE = 400;
+/** How long a just-started session may take to show up in the tree before we say so. */
+const START_TIMEOUT_MS = 15000;
 
 const STATUS_DOT: Record<string, string> = { running: '●', done: '✓', error: '✗', idle: '○' };
 
@@ -433,6 +435,10 @@ export default function App() {
     const [setup, setSetup] = useState<'first' | 'settings' | null>(null);
     const [picking, setPicking] = useState(false);
     const [newCwd, setNewCwd] = useState<string | null>(null);
+    /** A session ccmon just started whose tree row has not appeared yet. While set,
+     *  the header, chat and Composer belong to it (never to the previous selection). */
+    const [starting, setStarting] = useState<{ sid: string; cwd: string } | null>(null);
+    const [startSlow, setStartSlow] = useState(false);
     useEffect(() => {
         api.setup().then((i) => !i.config.setupDone && setSetup('first'));
     }, []);
@@ -483,6 +489,18 @@ export default function App() {
 
     // Auto-select the most recently active session until the user picks a node.
     useEffect(() => {
+        if (starting) {
+            // A started session's row is pending: only its arrival changes the selection.
+            const k = `m:${starting.sid}`;
+            if (rows.some((r) => r.key === k)) {
+                pendingOpen.current = null;
+                setStarting(null);
+                setTail(PAGE);
+                setView(null);
+                setSelected(k);
+            }
+            return;
+        }
         if (pendingOpen.current && rows.some((r) => r.key === pendingOpen.current)) {
             const k = pendingOpen.current;
             pendingOpen.current = null;
@@ -493,7 +511,19 @@ export default function App() {
         const valid = selected && rows.some((r) => r.key === selected);
         const first = (rows.find((r) => r.depth === 0 && r.live === 'busy') ?? rows.find((r) => r.depth === 0 && r.live) ?? rows[0]).key;
         if (!valid || (!userPicked && first !== selected)) setSelected(first);
-    }, [rows, selected, userPicked]);
+    }, [rows, selected, userPicked, starting]);
+
+    // The new row normally shows up within seconds. If it does not, stay on the new
+    // session's placeholder (its Composer still works) and say so; ask the worker again.
+    useEffect(() => {
+        setStartSlow(false);
+        if (!starting) return;
+        const t = setTimeout(() => {
+            setStartSlow(true);
+            api.openSession(starting.sid);
+        }, START_TIMEOUT_MS);
+        return () => clearTimeout(t);
+    }, [starting]);
 
     useEffect(() => {
         if (!selected) return;
@@ -577,8 +607,14 @@ export default function App() {
         setFollowing(atBottom);
     };
 
+    const clearStarting = () => {
+        if (starting) pendingOpen.current = null;
+        setStarting(null);
+    };
+
     const select = (key: string) => {
         setNewCwd(null);
+        clearStarting();
         if (key === selected) return;
         if (selected) setHistory((h) => [...h.slice(-50), selected]);
         setUserPicked(true);
@@ -591,6 +627,8 @@ export default function App() {
         const prev = history[history.length - 1];
         if (!prev) return;
         setHistory((h) => h.slice(0, -1));
+        clearStarting();
+        if (prev === selected) return; // leaving a starting placeholder: the view is intact
         setTail(PAGE);
         setView(null);
         setSelected(prev);
@@ -599,15 +637,23 @@ export default function App() {
     const row = rows.find((r) => r.key === selected);
 
     const started = (sid: string) => {
+        if (newCwd) setStarting({ sid, cwd: newCwd });
         setNewCwd(null);
         setUserPicked(true);
+        // `selected` (and its view) stay as they are underneath: going back or
+        // re-picking that row must not land on an empty view.
+        if (selected) setHistory((h) => [...h.slice(-50), selected]);
         pendingOpen.current = `m:${sid}`;
         api.openSession(sid);
     };
 
-    const composerSid = row && row.kind === 'main' && row.tool !== 'codex' ? row.key.slice(2) : null;
+    const composerSid = starting ? starting.sid : row && row.kind === 'main' && row.tool !== 'codex' ? row.key.slice(2) : null;
+    /** Session id the Library/Agents pages and side panels should follow. */
+    const pageSid = starting ? starting.sid : selected ? selected.split(':')[1] ?? null : null;
+    const panelKey = starting ? null : selected;
 
     const openOld = (sid: string) => {
+        clearStarting();
         setUserPicked(true);
         pendingOpen.current = `m:${sid}`;
         api.openSession(sid);
@@ -617,6 +663,7 @@ export default function App() {
     const openRun = (key: string, sid: string) => {
         setPage('thread');
         setNewCwd(null);
+        clearStarting();
         if (rows.some((r) => r.key === key)) {
             select(key);
             return;
@@ -629,11 +676,11 @@ export default function App() {
     };
 
     return (
-        <div className={`app ${showSidebar && page === 'thread' ? 'with-sidebar' : ''} ${treeOpen ? '' : 'tree-collapsed'}`}>
+        <div className={`app ${showSidebar && page === 'thread' && panelKey ? 'with-sidebar' : ''} ${treeOpen ? '' : 'tree-collapsed'}`}>
             {treeOpen ? (
                 <Tree
                     rows={rows}
-                    selected={selected}
+                    selected={panelKey}
                     onSelect={select}
                     onOpenOld={openOld}
                     onSettings={() => setSetup('settings')}
@@ -641,15 +688,15 @@ export default function App() {
                     onNewSession={() => setPicking(true)}
                 />
             ) : (
-                <TreeRail rows={rows} selected={selected} onSelect={select} onExpand={() => setTreeOpen(true)} />
+                <TreeRail rows={rows} selected={panelKey} onSelect={select} onExpand={() => setTreeOpen(true)} />
             )}
             {page !== 'thread' && (
                 <main className="main">
                     <AppHeader page={page} onPage={setPage} lead={<span className="thread-title">{PAGE_TITLE[page]}</span>} />
                     {page === 'library' ? (
-                        <Library sid={selected ? selected.split(':')[1] ?? null : null} sessionLabel={row?.label ?? null} />
+                        <Library sid={pageSid} sessionLabel={starting ? 'Session mới' : row?.label ?? null} />
                     ) : (
-                        <Agents sid={selected ? selected.split(':')[1] ?? null : null} onOpenRun={openRun} />
+                        <Agents sid={pageSid} onOpenRun={openRun} />
                     )}
                 </main>
             )}
@@ -664,8 +711,14 @@ export default function App() {
                                     ←
                                 </button>
                             )}
-                            <span className="thread-title">{newCwd ? `Session mới · ${newCwd}` : row?.label ?? view?.title ?? 'ccmon'}</span>
-                            {row && !newCwd && <span className={`badge st-${row.status}`}>{row.status}</span>}
+                            <span className="thread-title">
+                                {newCwd
+                                    ? `Session mới · ${newCwd}`
+                                    : starting
+                                      ? `Session mới · ${startSlow ? 'chưa thấy trong danh sách' : 'đang mở…'}`
+                                      : row?.label ?? view?.title ?? 'ccmon'}
+                            </span>
+                            {row && !newCwd && !starting && <span className={`badge st-${row.status}`}>{row.status}</span>}
                             {!following && (
                                 <button
                                     className="follow-btn"
@@ -704,7 +757,7 @@ export default function App() {
                     tabIndex={0}
                 >
                     <div ref={content}>
-                    {view && view.total > view.items.length && (
+                    {!starting && view && view.total > view.items.length && (
                         <button className="more-btn" type="button" onClick={() => setTail((t) => t + PAGE)}>
                             Hiện thêm {Math.min(PAGE, view.total - view.items.length)} mục cũ hơn ({view.total - view.items.length} còn lại)
                         </button>
@@ -712,6 +765,19 @@ export default function App() {
                     {newCwd ? (
                         <div className="muted pad">
                             Session mới trong <code>{newCwd}</code>. Chọn model, effort, quyền và capability bên dưới rồi gửi prompt đầu tiên.
+                        </div>
+                    ) : starting ? (
+                        <div className={`muted pad ${startSlow ? 'start-slow' : ''}`} role="status">
+                            {startSlow ? (
+                                <>
+                                    Session <code>{starting.sid}</code> đã chạy trong <code>{starting.cwd}</code> nhưng chưa xuất hiện trong danh sách sau{' '}
+                                    {START_TIMEOUT_MS / 1000} giây. Bạn vẫn đang ở session mới này — prompt gửi bên dưới đi vào chính nó; luồng sẽ hiện khi transcript được ghi.
+                                </>
+                            ) : (
+                                <>
+                                    Đang mở session mới <code>{starting.sid}</code> trong <code>{starting.cwd}</code>… Prompt gửi bên dưới đi vào session này.
+                                </>
+                            )}
                         </div>
                     ) : selected?.startsWith('w:') ? (
                         <WorkflowView rows={rows} wfKey={selected} onSelect={select} />
@@ -722,18 +788,18 @@ export default function App() {
                     )}
                     </div>
                 </div>
-                {!newCwd && <ActivityBar a={activityOf(view && view.key === selected ? view : null, row, rows)} now={now} />}
+                {!newCwd && !starting && <ActivityBar a={activityOf(view && view.key === selected ? view : null, row, rows)} now={now} />}
                 {newCwd ? (
                     <Composer key={`new:${newCwd}`} sid={null} cwd={newCwd} onStarted={started} />
                 ) : (
-                    composerSid && <Composer key={composerSid} sid={composerSid} cwd={null} />
+                    composerSid && <Composer key={composerSid} sid={composerSid} cwd={starting ? starting.cwd : null} />
                 )}
                 <StatusBar s={status} />
             </main>
-            {page === 'thread' && panel === 'assets' && selected && (
-                <Sidebar nodeKey={selected} refreshTick={Math.floor(assetTick / 8)} onOpenThread={select} />
+            {page === 'thread' && panel === 'assets' && panelKey && (
+                <Sidebar nodeKey={panelKey} refreshTick={Math.floor(assetTick / 8)} onOpenThread={select} />
             )}
-            {page === 'thread' && panel === 'changes' && selected && <ChangesPanel nodeKey={selected} refreshTick={Math.floor(assetTick / 8)} initial={startup.diff} />}
+            {page === 'thread' && panel === 'changes' && panelKey && <ChangesPanel nodeKey={panelKey} refreshTick={Math.floor(assetTick / 8)} initial={startup.diff} />}
             {setup && (
                 <Setup
                     canClose={setup === 'settings'}
@@ -749,6 +815,7 @@ export default function App() {
                     onPick={(cwd) => {
                         setPicking(false);
                         setPage('thread');
+                        clearStarting();
                         setNewCwd(cwd);
                     }}
                 />

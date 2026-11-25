@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, CapKind, CapScope, Capability, ControlDto, toggleCap, Usage } from './api';
 import { capSwitch, LOCK_REASON } from './Composer';
 
@@ -32,6 +32,10 @@ export function Library({ sid, sessionLabel }: { sid: string | null; sessionLabe
     const [usage, setUsage] = useState<Usage[]>([]);
     const [ctl, setCtl] = useState<ControlDto | null>(null);
     const [err, setErr] = useState<string | null>(null);
+    const writes = useRef<Promise<unknown>>(Promise.resolve());
+    const writeSeq = useRef(0);
+    const sidRef = useRef(sid);
+    sidRef.current = sid;
 
     useEffect(() => {
         setCtl(null);
@@ -50,9 +54,15 @@ export function Library({ sid, sessionLabel }: { sid: string | null; sessionLabe
         if (!sid || !ctl) return;
         const o = toggleCap(ctl.overlay, c.kind, c.id);
         setCtl({ ...ctl, overlay: o });
-        api.setOverlay(sid, o)
-            .then(setCtl)
-            .catch((e) => setErr(String(e)));
+        // Writes go out one at a time in click order (last click wins); only the
+        // newest answer updates the UI.
+        const seq = ++writeSeq.current;
+        writes.current = writes.current
+            .then(() => api.setOverlay(sid, o))
+            .then((d) => {
+                if (seq === writeSeq.current && sidRef.current === sid) setCtl(d);
+            })
+            .catch((e) => sidRef.current === sid && setErr(String(e)));
     };
     const ctlLock = !sid ? TOGGLE_TIP : ctl && !ctl.canControl ? LOCK_REASON[ctl.reason ?? ''] ?? 'Chỉ xem' : null;
 
@@ -123,8 +133,8 @@ export function Library({ sid, sessionLabel }: { sid: string | null; sessionLabe
                     <span>Mô tả</span>
                     <span>Phạm vi</span>
                     <span>Toàn cục</span>
-                    <span>{withUse ? 'Session này' : ''}</span>
-                    <span title="Bật/tắt cho session đang chọn (chạy từ ccmon)">{sid ? 'Session' : ''}</span>
+                    <span title="Session đang chọn đã dùng mục này chưa">{withUse ? 'Đã dùng' : ''}</span>
+                    <span title="Bật/tắt cho session đang chọn (chạy từ ccmon)">{sid ? 'Bật cho session' : ''}</span>
                 </div>
                 {caps === null && <div className="muted pad small">Đang tải…</div>}
                 {caps !== null && rows.length === 0 && <div className="muted pad small">Không có mục nào.</div>}
