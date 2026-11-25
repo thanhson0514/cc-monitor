@@ -101,14 +101,16 @@ impl Inner {
     fn lock(&self) -> std::sync::MutexGuard<'_, Shared> {
         self.m.lock().unwrap_or_else(|e| e.into_inner())
     }
-    /// Apply `f`; notify (outside the lock) if the state changed.
+    /// Apply `f`; notify (outside the lock) if the state changed or the
+    /// session id just became known.
     fn update(&self, f: impl FnOnce(&mut Shared)) {
         let note = {
             let mut g = self.lock();
-            let before = g.state.clone();
+            let before = (g.state.clone(), g.sid.is_some());
             f(&mut g);
             self.cv.notify_all();
-            (g.state != before && !g.stopped).then(|| (g.sid.clone(), g.state.clone()))
+            let changed = g.state != before.0 || g.sid.is_some() != before.1;
+            (changed && !g.stopped).then(|| (g.sid.clone(), g.state.clone()))
         };
         if let (Some((sid, st)), Some(cb)) = (note, &self.on_change) {
             cb(sid.as_deref().unwrap_or(""), &st);
@@ -153,7 +155,8 @@ impl ManagedSession {
         let inner = Arc::new(Inner {
             m: Mutex::new(Shared {
                 state: RunState::Starting,
-                sid: None,
+                // Resumed sessions know their id up front.
+                sid: resume_sid(&spec.args),
                 stopped: false,
             }),
             cv: Condvar::new(),
@@ -252,10 +255,23 @@ impl ManagedSession {
 impl Drop for ManagedSession {
     fn drop(&mut self) {
         self.inner.lock().stopped = true;
+        // Closing stdin ends a stream-json session; give it a moment.
         drop(self.stdin.take());
+        let deadline = std::time::Instant::now() + STOP_GRACE;
+        loop {
+            let done = {
+                let mut c = self.child.lock().unwrap_or_else(|e| e.into_inner());
+                !matches!(c.try_wait(), Ok(None))
+            };
+            if done || std::time::Instant::now() >= deadline {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
         {
             let mut c = self.child.lock().unwrap_or_else(|e| e.into_inner());
-            let _ = c.kill();
+            // Always signal the group: descendants may outlive the leader.
+            kill_tree(&mut c, self.pid);
             let _ = c.wait();
         }
         if let Some(f) = &self.inner.settings_file {
@@ -264,19 +280,53 @@ impl Drop for ManagedSession {
     }
 }
 
+fn resume_sid(args: &[String]) -> Option<String> {
+    args.iter()
+        .position(|a| a == "--resume")
+        .and_then(|i| args.get(i + 1))
+        .filter(|s| super::state::valid_sid(s))
+        .cloned()
+}
+
+/// Grace period for the child to exit after stdin closes, before SIGKILL.
+const STOP_GRACE: Duration = Duration::from_millis(1500);
+
+/// Kill the child and, on unix, its whole process group (it was spawned as
+/// a group leader), so tools it started (Bash, dev servers) cannot keep the
+/// stdout/stderr pipes open. No libc: shell out to `kill`.
+fn kill_tree(c: &mut Child, pid: u32) {
+    #[cfg(unix)]
+    {
+        let _ = Command::new("kill")
+            .args(["-KILL", "--", &format!("-{pid}")])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(not(unix))]
+    let _ = pid; // Windows: only the direct child is killed (no job object without new crates).
+    let _ = c.kill();
+}
+
 /// Spawn, retrying briefly on ETXTBSY (binary being replaced, e.g. by
 /// claude's auto-updater, or a script still open for writing in a forked
 /// sibling).
 fn spawn_retrying(spec: &LaunchSpec) -> io::Result<Child> {
     let mut tries = 0;
     loop {
-        let r = Command::new(&spec.program)
-            .args(&spec.args)
+        let mut cmd = Command::new(&spec.program);
+        cmd.args(&spec.args)
             .current_dir(&spec.cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn();
+            .stderr(Stdio::piped());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0); // own group, killed as a whole by kill_tree
+        }
+        let r = cmd.spawn();
         match r {
             Err(e) if cfg!(unix) && e.raw_os_error() == Some(26) && tries < 20 => {
                 tries += 1;
@@ -430,8 +480,45 @@ impl Manager {
         )?)
     }
 
+    /// Report a terminal state after a failed launch/send so the UI never
+    /// stays on `Restarting`/`Busy`.
+    fn fail(&self, sid: &str, e: ControlError) -> ControlError {
+        self.notify(
+            sid,
+            &RunState::Exited {
+                code: None,
+                stderr_tail: e.to_string(),
+            },
+        );
+        e
+    }
+
+    /// Lock-free new-session start, step 1 (needs only `&self`): spawn
+    /// without `--resume` and send the first message. Step 2, with the
+    /// Manager lock RELEASED: `session.wait_session_id(timeout)`. Step 3:
+    /// `adopt(sid, session, overlay)`.
+    pub fn start_new(
+        &self,
+        cwd: &Path,
+        text: &str,
+        o: &Overlay,
+    ) -> Result<ManagedSession, ControlError> {
+        let mut s = self.launch(None, cwd, o)?;
+        if let Err(e) = s.send(text) {
+            return Err(self.fail("", e.into()));
+        }
+        Ok(s)
+    }
+
+    /// Register a session started with `start_new` under its id (replacing,
+    /// i.e. killing, any previous entry for that id).
+    pub fn adopt(&mut self, sid: String, s: ManagedSession, overlay: Overlay) {
+        self.sessions.insert(sid, Entry { s, overlay });
+    }
+
     /// Send one user message. `sid == None` starts a new session and returns
-    /// its id. A changed overlay restarts the process between turns
+    /// its id, BLOCKING up to 30 s for it under `&mut self`; under a shared
+    /// lock prefer `start_new` + `wait_session_id` + `adopt`. A changed overlay restarts the process between turns
     /// (`--resume <sid>`); while a turn runs that is `Err(Busy)`, as is a send
     /// during a turn. `live` = `discovery::read_live` (our own children appear
     /// there too and are told apart by pid).
@@ -444,8 +531,7 @@ impl Manager {
         live: &HashMap<String, LiveInfo>,
     ) -> Result<String, ControlError> {
         let Some(sid) = sid else {
-            let mut s = self.launch(None, cwd, o)?;
-            s.send(text)?;
+            let s = self.start_new(cwd, text, o)?;
             let Some(new) = s.wait_session_id(SID_TIMEOUT) else {
                 let msg = match s.state() {
                     RunState::Exited { stderr_tail, .. } => {
@@ -455,13 +541,7 @@ impl Manager {
                 };
                 return Err(ControlError::Io(msg));
             };
-            self.sessions.insert(
-                new.clone(),
-                Entry {
-                    s,
-                    overlay: o.clone(),
-                },
-            );
+            self.adopt(new.clone(), s, o.clone());
             return Ok(new);
         };
         if let Some(info) = live.get(sid) {
@@ -480,13 +560,21 @@ impl Manager {
                     self.sessions.remove(sid); // Drop: kill + cleanup
                 }
                 RunState::Idle | RunState::Starting => {
-                    e.s.send(text)?;
+                    if let Err(err) = e.s.send(text) {
+                        self.sessions.remove(sid);
+                        return Err(self.fail(sid, err.into()));
+                    }
                     return Ok(sid.to_string());
                 }
             }
         }
-        let mut s = self.launch(Some(sid), cwd, o)?;
-        s.send(text)?;
+        let mut s = self
+            .launch(Some(sid), cwd, o)
+            .map_err(|e| self.fail(sid, e))?;
+        if let Err(e) = s.send(text) {
+            drop(s);
+            return Err(self.fail(sid, e.into()));
+        }
         self.sessions.insert(
             sid.to_string(),
             Entry {
@@ -850,6 +938,133 @@ done
         let pid = m.pid("d1").unwrap();
         drop(m);
         wait_for("gone", || !Path::new(&format!("/proc/{pid}")).exists());
+    }
+
+    type Events = Arc<Mutex<Vec<(String, RunState)>>>;
+
+    fn recording(f: &Fake) -> (Manager, Events) {
+        let ev: Events = Arc::default();
+        let e = ev.clone();
+        let m = Manager::with_program(
+            f.program.clone(),
+            f.state_dir(),
+            Box::new(move |sid, st| e.lock().unwrap().push((sid.to_string(), st.clone()))),
+        );
+        (m, ev)
+    }
+
+    #[test]
+    fn resumed_session_notifications_carry_sid() {
+        let f = fake(false);
+        let (mut m, ev) = recording(&f);
+        m.send(
+            Some("r1"),
+            f.dir.path(),
+            "x",
+            &Overlay::default(),
+            &HashMap::new(),
+        )
+        .unwrap();
+        wait_for("idle", || m.state("r1") == Some(RunState::Idle));
+        wait_for("idle event", || {
+            ev.lock()
+                .unwrap()
+                .iter()
+                .any(|(_, st)| *st == RunState::Idle)
+        });
+        let ev = ev.lock().unwrap().clone();
+        assert!(ev.contains(&("r1".to_string(), RunState::Busy)), "{ev:?}");
+        assert!(ev.iter().all(|(sid, _)| sid == "r1"), "{ev:?}");
+    }
+
+    #[test]
+    fn lock_free_new_session_start() {
+        let f = fake(false);
+        let (mut m, ev) = recording(&f);
+        let s = m
+            .start_new(f.dir.path(), "hi", &Overlay::default())
+            .unwrap();
+        // (Task 10: Manager lock released here.)
+        let sid = s.wait_session_id(Duration::from_secs(5)).unwrap();
+        assert_eq!(sid, NEW_SID);
+        m.adopt(sid.clone(), s, Overlay::default());
+        wait_for("idle", || m.state(NEW_SID) == Some(RunState::Idle));
+        // The moment the id became known was reported with the id.
+        wait_for("sid event", || {
+            ev.lock().unwrap().iter().any(|(s, _)| s == NEW_SID)
+        });
+    }
+
+    #[test]
+    fn failed_restart_reports_exited() {
+        let f = fake(false);
+        let (mut m, ev) = recording(&f);
+        m.send(
+            Some("f1"),
+            f.dir.path(),
+            "x",
+            &Overlay::default(),
+            &HashMap::new(),
+        )
+        .unwrap();
+        wait_for("idle", || m.state("f1") == Some(RunState::Idle));
+        std::fs::remove_file(&f.program).unwrap();
+        let b = Overlay {
+            model: Some("haiku".into()),
+            ..Default::default()
+        };
+        let r = m.send(Some("f1"), f.dir.path(), "y", &b, &HashMap::new());
+        assert_eq!(r, Err(ControlError::ClaudeNotFound));
+        assert_eq!(m.state("f1"), None);
+        let ev = ev.lock().unwrap().clone();
+        let n = ev.len();
+        assert_eq!(ev[n - 2], ("f1".to_string(), RunState::Restarting));
+        assert!(
+            matches!(&ev[n - 1], (sid, RunState::Exited { code: None, stderr_tail })
+                if sid == "f1" && !stderr_tail.is_empty()),
+            "{ev:?}"
+        );
+    }
+
+    #[test]
+    fn stop_kills_process_group() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path().display();
+        let program = dir.path().join("forky");
+        // A descendant keeps stdout/stderr open; the leader ignores stdin EOF.
+        std::fs::write(
+            &program,
+            format!(
+                "#!/bin/sh\nsleep 30 &\necho $! > \"{d}/bg.pid\"\necho '{{\"type\":\"system\",\"session_id\":\"g1\"}}'\nwhile :; do sleep 1; done\n"
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let s = ManagedSession::spawn(LaunchSpec {
+            program,
+            args: vec![],
+            cwd: dir.path().to_path_buf(),
+            settings_file: None,
+        })
+        .unwrap();
+        wait_for("idle", || s.state() == RunState::Idle);
+        let bg: u32 = std::fs::read_to_string(dir.path().join("bg.pid"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let inner = s.inner.clone();
+        s.stop();
+        wait_for("reader saw exit", || {
+            matches!(inner.lock().state, RunState::Exited { .. })
+        });
+        wait_for("background child killed", || {
+            // Gone, or a zombie awaiting its new parent.
+            std::fs::read_to_string(format!("/proc/{bg}/stat"))
+                .map(|st| st.split(") ").nth(1).is_some_and(|r| r.starts_with('Z')))
+                .unwrap_or(true)
+        });
     }
 
     #[test]
