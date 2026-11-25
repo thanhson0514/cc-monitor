@@ -91,6 +91,8 @@ pub struct ToolLinkInfo {
     pub workflow_name: Option<String>,
     /// `toolUseResult.status` (e.g. `async_launched`).
     pub status: Option<String>,
+    /// `toolUseResult.taskId` (workflows: the id their notification uses).
+    pub task_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -387,6 +389,7 @@ pub fn parse_line(line: &str) -> Option<Event> {
             run_id: s("runId"),
             workflow_name: s("workflowName"),
             status: s("status"),
+            task_id: s("taskId"),
         };
         if link.agent_id.is_some() || link.run_id.is_some() {
             ev.link = Some(link);

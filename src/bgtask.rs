@@ -77,7 +77,11 @@ impl Registry {
     pub fn pending_at(&self, ts: i64) -> Vec<&BgTask> {
         self.tasks
             .iter()
-            .filter(|t| t.started.is_some_and(|s| s <= ts) && t.ended.is_none_or(|e| e > ts))
+            .filter(|t| {
+                t.state != BgState::Unknown
+                    && t.started.is_some_and(|s| s <= ts)
+                    && t.ended.is_none_or(|e| e > ts)
+            })
             .collect()
     }
 
@@ -90,12 +94,16 @@ impl Registry {
     }
 
     /// Session is closed: tasks that never got a notice have an unknown outcome.
-    pub fn finalize_unknown(&mut self) {
+    /// Returns true if any task changed. Unknown tasks are not counted by `pending_at`.
+    pub fn finalize_unknown(&mut self) -> bool {
+        let mut changed = false;
         for t in &mut self.tasks {
             if t.state == BgState::Running {
                 t.state = BgState::Unknown;
+                changed = true;
             }
         }
+        changed
     }
 }
 
@@ -141,6 +149,15 @@ mod tests {
         assert_eq!(ids(5), Vec::<String>::new());
         assert_eq!(ids(25), vec!["a", "b"]);
         assert_eq!(ids(35), vec!["b"]);
+    }
+
+    #[test]
+    fn unknown_tasks_are_not_pending() {
+        let mut r = Registry::default();
+        r.launch(task("a", 10));
+        assert!(r.finalize_unknown());
+        assert!(!r.finalize_unknown());
+        assert!(r.pending_at(50).is_empty());
     }
 
     #[test]

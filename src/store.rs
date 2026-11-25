@@ -81,6 +81,22 @@ pub struct Session {
     pub path: PathBuf,
 }
 
+impl Session {
+    fn finalize_bg(&mut self) {
+        self.main.finalize_bg_unknown();
+        for a in self.agents.values_mut() {
+            a.thread.finalize_bg_unknown();
+        }
+    }
+
+    /// Closed = not live and idle beyond the active window (same rule as `session_status`).
+    fn finalize_if_closed(&mut self, now: i64) {
+        if self.live.is_none() && now - self.mtime >= ACTIVE_MS {
+            self.finalize_bg();
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Store {
     pub sessions: HashMap<String, Session>,
@@ -92,6 +108,29 @@ pub struct Store {
 impl Store {
     /// Apply one worker message. Returns true if the UI should redraw.
     pub fn apply(&mut self, m: Msg) -> bool {
+        self.apply_at(m, crate::discovery::now_ms())
+    }
+
+    /// Like `apply`, with an explicit clock (decides which sessions count as closed).
+    pub fn apply_at(&mut self, m: Msg, now: i64) -> bool {
+        let touched = match &m {
+            Msg::Events {
+                key: Key::Main(sid) | Key::Agent(sid, _),
+                ..
+            } => Some(sid.clone()),
+            _ => None,
+        };
+        let live_msg = matches!(m, Msg::Live(_));
+        let r = self.apply_msg(m);
+        for (sid, s) in self.sessions.iter_mut() {
+            if live_msg || touched.as_deref() == Some(sid.as_str()) {
+                s.finalize_if_closed(now);
+            }
+        }
+        r
+    }
+
+    fn apply_msg(&mut self, m: Msg) -> bool {
         match m {
             Msg::Session {
                 sid,
@@ -153,7 +192,7 @@ impl Store {
                 for (sid, s) in self.sessions.iter_mut() {
                     // Live -> not live: the session closed.
                     if s.live.is_some() && !map.contains_key(sid) {
-                        s.main.finalize_bg_unknown();
+                        s.finalize_bg();
                     }
                     s.live = map.get(sid).cloned();
                 }
@@ -490,6 +529,44 @@ mod tests {
 
     fn ev(l: &str) -> crate::event::Event {
         parse_line(l).unwrap()
+    }
+
+    #[test]
+    fn never_live_stale_session_finalizes_orphan_bg_tasks() {
+        let mut st = Store::default();
+        st.apply_at(
+            Msg::Session {
+                sid: "s".into(),
+                project: "-p".into(),
+                tool: crate::discovery::Tool::Claude,
+                path: Default::default(),
+            },
+            0,
+        );
+        st.apply_at(Msg::Events {
+            key: Key::Main("s".into()),
+            reset: false,
+            mtime_ms: 1000,
+            events: vec![
+                ev(r#"{"type":"assistant","uuid":"A","timestamp":"2026-11-25T00:00:00.050Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"x","run_in_background":true}}]}}"#),
+                ev(r#"{"type":"user","uuid":"B","parentUuid":"A","timestamp":"2026-11-25T00:00:00.100Z","toolUseResult":{"backgroundTaskId":"bgA"},"message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"r"}]}}"#),
+            ],
+        }, 1000 + ACTIVE_MS - 1);
+        let state = |st: &mut Store| match &st
+            .thread_mut(&NodeId::Main("s".into()))
+            .unwrap()
+            .items()
+            .iter()
+            .find_map(|i| match i {
+                crate::thread::Item::Tool(t) => t.bg.clone(),
+                _ => None,
+            }) {
+            Some(b) => b.state,
+            None => panic!("no bg"),
+        };
+        assert_eq!(state(&mut st), crate::bgtask::BgState::Running);
+        st.apply_at(Msg::Live(Default::default()), 1000 + ACTIVE_MS);
+        assert_eq!(state(&mut st), crate::bgtask::BgState::Unknown);
     }
 
     fn store() -> Store {

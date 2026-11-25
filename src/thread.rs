@@ -433,7 +433,10 @@ impl Thread {
                                 ("Yield", Some(ts)) => self
                                     .notices
                                     .iter()
-                                    .find(|(_, t)| t.is_some_and(|t| t > ts))
+                                    .filter(|(_, t)| t.is_some_and(|t| t >= ts))
+                                    .min_by_key(|(id, _)| {
+                                        !self.bg.pending_at(ts).iter().any(|w| w.id == *id)
+                                    })
                                     .map(|(id, _)| id.clone()),
                                 _ => None,
                             },
@@ -494,7 +497,10 @@ impl Thread {
                     .and_then(|l| l.workflow_name.clone())
                     .or_else(|| self.workflow_names.get(tool_use_id).cloned())
                     .unwrap_or_else(|| run.clone());
-                (run.clone(), BgKind::Workflow, label)
+                let id = link
+                    .and_then(|l| l.task_id.clone())
+                    .unwrap_or_else(|| run.clone());
+                (id, BgKind::Workflow, label)
             }
             _ => return,
         };
@@ -527,8 +533,9 @@ impl Thread {
 
     /// The session closed: background tasks without a notice have an unknown outcome.
     pub fn finalize_bg_unknown(&mut self) {
-        self.bg.finalize_unknown();
-        self.dirty = true;
+        if self.bg.finalize_unknown() {
+            self.dirty = true;
+        }
     }
 
     fn push_user_file(&mut self, ts: Option<i64>, path: String, kind: UserFileKind) {
@@ -937,6 +944,37 @@ mod tests {
             .collect();
         assert_eq!(sys.len(), 1);
         assert!(sys[0].contains("completed"));
+    }
+
+    #[test]
+    fn real_shape_agent_and_workflow_notices_complete_tasks() {
+        // Real transcripts: agent notice task-id == agentId; workflow notice task-id == taskId
+        // (not runId) and both carry the launching tool_use id.
+        let agent_n = "<task-notification>\\n<task-id>ag1</task-id>\\n<tool-use-id>t2</tool-use-id>\\n<status>completed</status>\\n<summary>Agent done</summary>\\n</task-notification>";
+        let wf_n = "<task-notification>\\n<task-id>wnb6</task-id>\\n<tool-use-id>t5</tool-use-id>\\n<status>completed</status>\\n<summary>Workflow done</summary>\\n</task-notification>";
+        let mut lines = bg_lines();
+        lines.push(r#"{"type":"assistant","uuid":"W","parentUuid":"D","timestamp":"2026-11-25T00:00:00.121Z","message":{"content":[{"type":"tool_use","id":"t5","name":"Workflow","input":{}}]}}"#.into());
+        lines.push(r#"{"type":"user","uuid":"X","parentUuid":"W","timestamp":"2026-11-25T00:00:00.122Z","toolUseResult":{"status":"async_launched","taskId":"wnb6","runId":"wf_1","workflowName":"rev"},"message":{"content":[{"type":"tool_result","tool_use_id":"t5","content":"ok"}]}}"#.into());
+        lines.push(notice_line("E", "X", "2026-11-25T00:00:00.130Z", agent_n));
+        lines.push(notice_line("F", "E", "2026-11-25T00:00:00.140Z", wf_n));
+        let mut t = thread_from(&lines);
+        let items = content(&mut t);
+        let a = tool(&items, "t2").bg.as_ref().unwrap();
+        assert_eq!(a.state, BgState::Completed);
+        let w = tool(&items, "t5").bg.as_ref().unwrap();
+        assert_eq!((w.id.as_str(), w.state), ("wnb6", BgState::Completed));
+        assert!(items.iter().all(|i| !matches!(i, Item::System { .. })));
+    }
+
+    #[test]
+    fn unknown_task_not_waited_on_by_later_yield() {
+        let mut lines = bg_lines();
+        let mut t = thread_from(&lines);
+        t.finalize_bg_unknown();
+        lines.clear();
+        t.push(parse_line(r#"{"type":"assistant","uuid":"Y2","parentUuid":"D","timestamp":"2026-11-25T00:00:01.000Z","message":{"content":[{"type":"tool_use","id":"t9","name":"Yield","input":{}}]}}"#).unwrap());
+        let items = content(&mut t);
+        assert!(tool(&items, "t9").waits.is_empty());
     }
 
     #[test]
