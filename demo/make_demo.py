@@ -131,6 +131,53 @@ export function QrPayment({ amount }: { amount: number }) {
     return page, old, new, qr
 
 
+BACKDATE = []  # (path, seconds ago): finished sub-agent transcripts, so run history shows them as completed
+PLUGIN = "acme-qa@demo-marketplace"
+SKILLS = [("frontend-testing", "Viết và chạy test component React với Testing Library."),
+          ("release-notes", "Soạn release notes từ git log và các PR đã merge."),
+          ("db-migrations", "Tạo và kiểm tra migration SQL an toàn."),
+          ("api-docs", "Sinh tài liệu OpenAPI từ route và type."),
+          ("i18n-check", "Tìm chuỗi chưa dịch và key i18n thừa."),
+          ("docker-dev", "Dựng môi trường dev bằng docker compose.")]
+AGENTS = ["Explore", "general-purpose", "Plan", "code-reviewer", "checkout-tester"]
+MCP = ["playwright", "payments-sandbox"]
+
+
+def capabilities():
+    """Fake skills, a plugin, agents, a workflow and MCP servers for the Library and Agents pages."""
+    for name, desc in SKILLS:
+        write(os.path.join(CLAUDE, "skills", name, "SKILL.md"), f"---\nname: {name}\ndescription: {desc}\n---\n\n# {name}\n")
+    inst = os.path.join(CLAUDE, "plugins", "cache", "demo-marketplace", "acme-qa", "1.2.0")
+    write(os.path.join(inst, "skills", "a11y-check", "SKILL.md"),
+          "---\nname: a11y-check\ndescription: Kiểm tra truy cập (WCAG) cho trang web.\n---\n")
+    write(os.path.join(inst, "agents", "perf-auditor.md"),
+          "---\nname: perf-auditor\ndescription: Đo hiệu năng trang và đề xuất tối ưu.\ntools: Read, Bash\n---\nĐo Lighthouse và báo cáo.\n")
+    write(os.path.join(CLAUDE, "plugins", "installed_plugins.json"), json.dumps(
+        {"version": 2, "plugins": {PLUGIN: [{"scope": "user", "installPath": inst, "version": "1.2.0"}]}}, indent=2))
+    write(os.path.join(CLAUDE, "agents", "code-reviewer.md"),
+          "---\nname: code-reviewer\ndescription: Soát thay đổi trước khi merge: lỗi logic, bảo mật, test thiếu.\n"
+          "tools: Read, Grep, Glob, Bash\nmodel: sonnet\n---\n\nBạn là reviewer cẩn thận. Đọc diff, chỉ ra lỗi kèm file:dòng.\n")
+    write(os.path.join(WORK, ".claude", "agents", "checkout-tester.md"),
+          "---\nname: checkout-tester\ndescription: Chạy kịch bản thanh toán end-to-end trên môi trường sandbox.\ntools: Bash, Read\n---\n\nChạy npm run e2e:checkout và tóm tắt kết quả.\n")
+    write(os.path.join(CLAUDE, "workflows", "review-checkout.js"),
+          "export const meta = {\n  name: 'review-checkout',\n  description: 'Review thay đổi checkout: logic, a11y, kiểm chứng',\n}\n")
+    write(os.path.join(OUT, ".claude.json"), json.dumps(
+        {"mcpServers": {"playwright": {"command": "npx", "args": ["@playwright/mcp"]}}}, indent=2))
+    write(os.path.join(WORK, ".mcp.json"), json.dumps(
+        {"mcpServers": {"payments-sandbox": {"type": "http", "url": "http://localhost:8787/mcp"}}}, indent=2))
+
+
+def inventory(t, ago):
+    """What the session announced as available (skills, agents, MCP servers)."""
+    skills = [n for n, _ in SKILLS] + ["acme-qa:a11y-check"]
+    for att in ({"type": "skill_listing", "content": "\n".join(f"- {n}: demo" for n in skills)},
+                {"type": "agent_listing_delta", "addedTypes": AGENTS + ["acme-qa:perf-auditor"]},
+                {"type": "mcp_instructions_delta", "addedNames": MCP}):
+        d = t._base("attachment", ago)
+        d["attachment"] = att
+        t.raw(d)
+
+
 def claude_session():
     page, old, new, qr = workspace()
     pdir = os.path.join(CLAUDE, "projects", PROJECT_KEY)
@@ -141,7 +188,10 @@ def claude_session():
     png(shot, 480, 300, (36, 40, 64))
     t.raw({"type": "ai-title", "aiTitle": "Thêm thanh toán bằng mã QR", "sessionId": SID})
     t.user(f"Thêm thanh toán bằng mã QR vào trang checkout, viết test luôn. Giao diện như ảnh [Image #1]\n[Image: source: {tmp}/images/1.png]", 900)
+    inventory(t, 898)
     t.assistant([{"type": "thinking", "thinking": "", "signature": "x"}], 896, "msg_01")
+    t.tool("t0", "Skill", {"skill": "frontend-testing"}, 894, "msg_01b", "Launching skill: frontend-testing", took=0.2)
+    t.tool("t0b", "Skill", {"skill": "acme-qa:a11y-check"}, 893, "msg_01c", "Launching skill: acme-qa:a11y-check", took=0.2)
     t.assistant([{"type": "text", "text": "Mình xem luồng checkout hiện tại trước, rồi thêm tab **QR** cạnh thanh toán thẻ."}], 895, "msg_01")
     t.tool("t1", "Bash", {"command": "rg -n \"CardPayment\" src --type ts", "description": "Tìm chỗ dùng CardPayment"}, 890, "msg_02",
            "src/checkout/CheckoutPage.tsx:7:            <CardPayment amount={cart.total} />\nsrc/checkout/CardPayment.tsx:3:export function CardPayment(", took=0.4)
@@ -152,6 +202,7 @@ def claude_session():
     t.tool("t4", "Edit", {"file_path": page, "old_string": old.split("\n\n", 1)[1], "new_string": new.split("\n\n", 1)[1]}, 700, "msg_05",
            "The file has been updated.", took=0.3)
     t.tool("t5", "Write", {"file_path": os.path.join(WORK, "src/checkout/QrPayment.tsx"), "content": qr}, 690, "msg_06", "File created.", took=0.2)
+    t.tool("t5s", "Skill", {"skill": "frontend-testing"}, 610, "msg_06s", "Launching skill: frontend-testing", took=0.2)
     t.tool("t6", "Bash", {"command": "npm test -- checkout", "description": "Chạy test checkout"}, 600, "msg_07",
            " PASS  src/checkout/CheckoutPage.test.tsx\n  ✓ shows card payment by default (31 ms)\n  ✓ switches to QR tab (18 ms)\n\nTests: 2 passed, 2 total", took=8.3)
     t.tool("t7", "Bash", {"command": f"node scripts/screenshot.mjs /checkout {shot}", "description": "Chụp màn hình trang checkout"}, 560, "msg_08",
@@ -160,16 +211,28 @@ def claude_session():
            500, "msg_09", "Workflow launched in background.", tur={"runId": "wf_demo01", "workflowName": "review-checkout", "status": "async_launched"}, took=0.4)
     # background Bash + Yield + completion notice (output file under a `tasks/` dir)
     bg_out = os.path.join(tmp, "tasks", "bgdemo01.output")
-    write(bg_out, "\n".join(f"[{i:02d}] webpack compiled successfully" for i in range(1, 31)) + "\n")
+    write(bg_out, "\n".join([
+        "> acme-shop@1.4.0 dev", "> vite", "",
+        "  VITE v5.4.2  ready in 412 ms", "  ➜  Local:   http://localhost:5173/",
+        "[vite] page reload src/checkout/CheckoutPage.tsx",
+        "[vite] hmr update /src/checkout/QrPayment.tsx",
+        "[vite] hmr update /src/checkout/QrPayment.tsx (x2)"]) + "\n")
     t.tool("t10", "Bash", {"command": "npm run dev", "description": "Chạy dev server", "run_in_background": True}, 480, "msg_09b",
            "Command running in background with ID: bgdemo01. Output is being written to: " + bg_out,
            tur={"backgroundTaskId": "bgdemo01"}, took=0.3)
+    t.tool("t10m", "Monitor", {"description": "Theo dõi log dev server", "command": "tail -f logs/dev.log | grep -i error"}, 476, "msg_09m",
+           "Monitor started with ID: mondemo01.", tur={"backgroundTaskId": "mondemo01"}, took=0.2)
     t.tool("t11", "Yield", {}, 470, "msg_09c", "Yielded.", took=90)
     n = t._base("attachment", 380)
     n["attachment"] = {"type": "queued_command", "commandMode": "task-notification", "prompt": (
         "<task-notification>\n<task-id>bgdemo01</task-id>\n<tool-use-id>t10</tool-use-id>\n"
         f"<output-file>{bg_out}</output-file>\n<status>completed</status>\n"
         "<summary>Background command &quot;Chạy dev server&quot; completed (exit code 0)</summary>\n</task-notification>")}
+    t.raw(n)
+    n = t._base("attachment", 376)
+    n["attachment"] = {"type": "queued_command", "commandMode": "task-notification", "prompt": (
+        "<task-notification>\n<task-id>a1b2c3d4e5f60718</task-id>\n<tool-use-id>t3</tool-use-id>\n<status>completed</status>\n"
+        "<summary>Agent &quot;Khảo sát API thanh toán QR&quot; completed</summary>\n</task-notification>")}
     t.raw(n)
     t.assistant([{"type": "text", "text": (
         "Đã thêm thanh toán QR:\n\n"
@@ -178,6 +241,11 @@ def claude_session():
         "| `src/checkout/QrPayment.tsx` | component mới, gọi `createQr` |\n\n"
         "```ts\nconst [method, setMethod] = useState<'card' | 'qr'>('card');\n```\n\n"
         "Test: **2/2 pass**. Workflow review đang chạy, mình sẽ báo khi xong.")}], 300, "msg_10", out_tokens=860, ctx=61_200)
+    t.tool("t8m", "mcp__playwright__browser_take_screenshot", {"url": "http://localhost:5173/checkout"}, 360, "msg_10a",
+           "Screenshot saved.", took=1.4)
+    t.tool("t8r", "Agent", {"description": "Review thay đổi checkout", "subagent_type": "code-reviewer",
+                            "prompt": "Soát diff của nhánh feat/qr-checkout, chỉ ra lỗi kèm file:dòng."}, 340, "msg_10b",
+           "Không thấy lỗi chặn merge. Gợi ý: thêm test cho trường hợp tạo mã QR thất bại.", took=40)
     t.tool("t9", "Bash", {"command": "npm run build", "description": "Build production"}, 20, "msg_11")
     t.save()
 
@@ -198,6 +266,13 @@ def claude_session():
     a.tool("s3", "SubagentHandback", {"message": "**Kết quả:** `createQr(amount)` ở `src/api/payments.ts:12` trả `{ imageUrl, expiresAt }`. Chưa có hàm kiểm tra trạng thái; cần poll `GET /payments/:id`."},
            840, "sm3", "ok", took=0.1)
     a.save()
+    r = Transcript(os.path.join(sub, "agent-r9e8d7c6b5a40312.jsonl"), WORK, "feat/qr-checkout", sidechain=True)
+    r.user("Soát diff của nhánh feat/qr-checkout, chỉ ra lỗi kèm file:dòng.", 339)
+    r.tool("r1", "Bash", {"command": "git diff main...HEAD", "description": "Xem diff"}, 335, "rm1", "diff --git …", took=0.3)
+    r.assistant([{"type": "text", "text": "Không thấy lỗi chặn merge. Gợi ý: thêm test cho trường hợp tạo mã QR thất bại."}], 300, "rm2")
+    r.save()
+    write(os.path.join(sub, "agent-r9e8d7c6b5a40312.meta.json"), json.dumps({"agentType": "code-reviewer", "description": "Review thay đổi checkout", "toolUseId": "t8r"}))
+    BACKDATE.extend([(a.path, 840), (r.path, 300)])
     write(os.path.join(sub, "agent-a1b2c3d4e5f60718.meta.json"), json.dumps({"agentType": "Explore", "description": "Khảo sát API thanh toán QR", "toolUseId": "t3"}))
 
     # workflow agents
@@ -213,7 +288,8 @@ def claude_session():
 
     # live registry: the parent process stays alive while ccmon runs in CI/screenshot scripts
     write(os.path.join(CLAUDE, "sessions", "1.json"), json.dumps({"pid": os.getppid(), "sessionId": SID, "status": "busy", "name": "acme-shop"}))
-    write(os.path.join(CLAUDE, "settings.json"), json.dumps({"statusLine": {"type": "command", "command": "ccmon tee --"}}, indent=2))
+    write(os.path.join(CLAUDE, "settings.json"), json.dumps({"statusLine": {"type": "command", "command": "ccmon tee --"},
+                                                                 "enabledPlugins": {PLUGIN: True}}, indent=2))
     # status-line snapshot (what `ccmon tee` would have saved)
     write(os.path.join(OUT, "cache", "statusline", f"{SID}.json"), json.dumps({
         "session_id": SID, "context_window": {"context_window_size": 200000, "used_percentage": 30.6},
@@ -222,6 +298,7 @@ def claude_session():
 
 
 def main():
+    capabilities()
     claude_session()
     cfg = os.path.join(OUT, "config.json")
     write(cfg, json.dumps({"setupDone": True, "claude": True, "codex": False}))
@@ -230,6 +307,8 @@ def main():
     for root, _, files in os.walk(OUT):
         for f in files:
             os.utime(os.path.join(root, f), (now, now))
+    for path, ago in BACKDATE:
+        os.utime(path, (now - ago, now - ago))
     env = {"CCMON_CLAUDE_DIR": CLAUDE, "CCMON_CACHE_DIR": os.path.join(OUT, "cache"), "CCMON_CONFIG": cfg}
     print(json.dumps(env))
 
