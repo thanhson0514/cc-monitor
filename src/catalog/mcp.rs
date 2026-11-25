@@ -28,7 +28,17 @@ fn describe(cfg: &Value) -> Map<String, Value> {
     }
     if let Some(u) = s("url") {
         let end = u.find(['?', '#']).unwrap_or(u.len());
-        m.insert("url".into(), u[..end].into());
+        let u = &u[..end];
+        // drop `user:pass@` userinfo from the authority
+        let u = match u.split_once("://") {
+            Some((scheme, rest)) => {
+                let slash = rest.find('/').unwrap_or(rest.len());
+                let host = rest[..slash].rsplit('@').next().unwrap_or("");
+                format!("{scheme}://{host}{}", &rest[slash..])
+            }
+            None => u.to_string(),
+        };
+        m.insert("url".into(), u.into());
     }
     m
 }
@@ -150,6 +160,14 @@ mod tests {
         // secrets (args, env, url query) are not copied
         let all = serde_json::to_string(&caps).unwrap();
         assert!(!all.contains("SECRET"), "{all}");
+    }
+
+    #[test]
+    fn url_userinfo_is_stripped() {
+        let d = describe(&serde_json::json!({"url":"https://user:pass@host.test:8080/p?k=1"}));
+        assert_eq!(d["url"], "https://host.test:8080/p");
+        let d = describe(&serde_json::json!({"url":"http://h.test"}));
+        assert_eq!(d["url"], "http://h.test");
     }
 
     #[test]
