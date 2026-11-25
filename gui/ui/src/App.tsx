@@ -7,6 +7,7 @@ import { ChangesPanel } from './Changes';
 import { Setup } from './Setup';
 import { Library } from './Library';
 import { Composer } from './Composer';
+import { AppHeader, AssetsIcon, DiffIcon, HeadIconBtn, Page, PAGE_TITLE } from './Header';
 import logo from './assets/logo.png';
 
 const PAGE = 400;
@@ -417,25 +418,6 @@ function WorkflowView({ rows, wfKey, onSelect }: { rows: TreeRow[]; wfKey: strin
     );
 }
 
-export type Page = 'thread' | 'library' | 'agents';
-
-export function PageNav({ page, onPage }: { page: Page; onPage: (p: Page) => void }) {
-    const items: [Page, string, string][] = [
-        ['thread', 'Luồng', 'Xem luồng (Ctrl+1)'],
-        ['library', 'Thư viện', 'Skills, plugin, MCP (Ctrl+2)'],
-        ['agents', 'Agents', 'Agents và workflow (Ctrl+3)']
-    ];
-    return (
-        <div className="page-nav">
-            {items.map(([p, label, title]) => (
-                <button key={p} type="button" className={`sb-toggle ${page === p ? 'on' : ''}`} onClick={() => onPage(p)} title={title}>
-                    {label}
-                </button>
-            ))}
-        </div>
-    );
-}
-
 export default function App() {
     const [page, setPage] = useState<Page>('thread');
     const [rows, setRows] = useState<TreeRow[]>([]);
@@ -647,10 +629,7 @@ export default function App() {
             )}
             {page !== 'thread' && (
                 <main className="main">
-                    <header className="thread-head">
-                        <span className="thread-title">{page === 'library' ? 'Thư viện' : 'Agents'}</span>
-                        <PageNav page={page} onPage={setPage} />
-                    </header>
+                    <AppHeader page={page} onPage={setPage} lead={<span className="thread-title">{PAGE_TITLE[page]}</span>} />
                     {page === 'library' ? (
                         <Library sid={selected ? selected.split(':')[1] ?? null : null} sessionLabel={row?.label ?? null} />
                     ) : (
@@ -659,48 +638,45 @@ export default function App() {
                 </main>
             )}
             <main className="main" style={page !== 'thread' ? { display: 'none' } : undefined}>
-                <header className="thread-head">
-                    {history.length > 0 && (
-                        <button className="back-btn" type="button" onClick={back} title="Quay lại luồng trước">
-                            ←
-                        </button>
-                    )}
-                    <span className="thread-title">{newCwd ? `Session mới · ${newCwd}` : row?.label ?? view?.title ?? 'ccmon'}</span>
-                    {row && !newCwd && <span className={`badge st-${row.status}`}>{row.status}</span>}
-                    <PageNav page={page} onPage={setPage} />
-                    <div className="panel-btns">
-                        <button
-                            type="button"
-                            className={`sb-toggle ${panel === 'assets' ? 'on' : ''}`}
-                            onClick={() => setPanel(panel === 'assets' ? null : 'assets')}
-                            title="Ảnh, file, log của luồng"
-                        >
-                            🗂 Quản lý
-                        </button>
-                        <button
-                            type="button"
-                            className={`sb-toggle ${panel === 'changes' ? 'on' : ''}`}
-                            onClick={() => setPanel(panel === 'changes' ? null : 'changes')}
-                            title="File đã sửa trong phiên, xem diff hai cột"
-                        >
-                            ± Thay đổi
-                        </button>
-                    </div>
-                    {!following && (
-                        <button
-                            className="follow-btn"
-                            type="button"
-                            onClick={() => {
-                                stickBottom.current = true;
-                                setFollowing(true);
-                                const el = scroller.current;
-                                if (el) el.scrollTop = el.scrollHeight;
-                            }}
-                        >
-                            ↓ Mới nhất
-                        </button>
-                    )}
-                </header>
+                <AppHeader
+                    page={page}
+                    onPage={setPage}
+                    lead={
+                        <>
+                            {history.length > 0 && (
+                                <button className="back-btn" type="button" onClick={back} title="Quay lại luồng trước" aria-label="Quay lại luồng trước">
+                                    ←
+                                </button>
+                            )}
+                            <span className="thread-title">{newCwd ? `Session mới · ${newCwd}` : row?.label ?? view?.title ?? 'ccmon'}</span>
+                            {row && !newCwd && <span className={`badge st-${row.status}`}>{row.status}</span>}
+                            {!following && (
+                                <button
+                                    className="follow-btn"
+                                    type="button"
+                                    onClick={() => {
+                                        stickBottom.current = true;
+                                        setFollowing(true);
+                                        const el = scroller.current;
+                                        if (el) el.scrollTop = el.scrollHeight;
+                                    }}
+                                >
+                                    ↓ Mới nhất
+                                </button>
+                            )}
+                        </>
+                    }
+                    actions={
+                        <>
+                            <HeadIconBtn label="Quản lý: ảnh, file, log của luồng" on={panel === 'assets'} onClick={() => setPanel(panel === 'assets' ? null : 'assets')}>
+                                <AssetsIcon />
+                            </HeadIconBtn>
+                            <HeadIconBtn label="Thay đổi: file đã sửa trong phiên, diff hai cột" on={panel === 'changes'} onClick={() => setPanel(panel === 'changes' ? null : 'changes')}>
+                                <DiffIcon />
+                            </HeadIconBtn>
+                        </>
+                    }
+                />
                 <div
                     className="chat"
                     ref={scroller}

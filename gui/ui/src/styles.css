@@ -50,10 +50,21 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* main */
 .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; height: 100%; }
-.thread-head { display: flex; align-items: center; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--border); background: var(--panel); }
-.thread-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.back-btn { font-size: 16px; padding: 2px 8px; border-radius: 6px; background: var(--panel-2); }
-.follow-btn { background: #232744; color: var(--accent); border-radius: 6px; padding: 4px 10px; font-size: 12px; }
+.app-head { flex: none; display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px 0 20px; border-bottom: 1px solid var(--border); background: var(--panel); white-space: nowrap; }
+.head-lead { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+.head-lead .badge { flex: none; }
+.thread-title { min-width: 0; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.back-btn { flex: none; height: 26px; font-size: 14px; padding: 0 8px; border-radius: 6px; background: var(--panel-2); }
+.follow-btn { flex: none; height: 26px; background: #232744; color: var(--accent); border-radius: 6px; padding: 0 10px; font-size: 12px; white-space: nowrap; }
+.seg { flex: none; display: inline-flex; height: 26px; padding: 2px; gap: 2px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); }
+.seg-btn { padding: 0 10px; border-radius: 5px; font-size: 12px; line-height: 20px; color: var(--muted); white-space: nowrap; }
+.seg-btn:hover { color: var(--text); }
+.seg-btn.on { background: #232744; color: var(--accent); }
+.head-actions { flex: none; display: flex; gap: 4px; width: 56px; justify-content: flex-end; }
+.head-icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; border: 1px solid transparent; color: var(--muted); }
+.head-icon:hover { color: var(--text); background: var(--panel-2); }
+.head-icon.on { background: #232744; color: var(--accent); border-color: #333a66; }
+.app-head button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .chat { outline: none; flex: 1; min-height: 0; overflow-y: auto; padding: 16px 24px 24px; }
 .more-btn { display: block; margin: 0 auto 16px; color: var(--accent); font-size: 12px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; }
 
@@ -293,7 +304,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .tcode-body::-webkit-scrollbar, .diff::-webkit-scrollbar { height: 5px; }
 .tcode-body::-webkit-scrollbar-thumb, .diff::-webkit-scrollbar-thumb { background: #2a2c36; }
 
-.panel-btns { margin-left: auto; display: flex; gap: 6px; }
 .chg-row { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: 7px 8px; border-radius: 6px; font-size: 12px; border: 1px solid transparent; }
 .chg-row:hover { background: var(--panel-2); border-color: var(--border); }
 .chg-row.missing { opacity: .55; }
@@ -370,8 +380,6 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .bg-out { margin-top: 4px; }
 
 /* page nav + library */
-.page-nav { margin-left: auto; display: flex; gap: 6px; }
-.page-nav + .panel-btns { margin-left: 12px; }
 .lib { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .lib-bar { display: flex; align-items: center; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--border); }
 .lib-tabs { display: flex; gap: 6px; }
