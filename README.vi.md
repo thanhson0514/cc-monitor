@@ -10,6 +10,9 @@
 gọn gàng, cập nhật trực tiếp: từng prompt, lệnh, file đã sửa, subagent và workflow, kèm diff hai cột
 và hạn mức gói. Chạy cục bộ, chỉ đọc.
 
+> **Lưu ý:** từ v0.2.0 ccmon tập trung vào **Claude Code**; tạm thời tắt theo dõi Codex.
+> Các phần nhắc tới Codex bên dưới mô tả bộ đọc vẫn còn trong code nhưng chưa bật.
+
 [**Tải về**](https://github.com/thanhson0514/cc-monitor/releases/latest) ·
 [Website](https://thanhson0514.github.io/cc-monitor) ·
 [Báo lỗi](https://github.com/thanhson0514/cc-monitor/issues) ·

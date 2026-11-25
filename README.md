@@ -10,6 +10,9 @@ A free, open-source desktop app that turns **Claude Code** and **Codex** session
 real-time view: every prompt, command, file edit, sub-agent and workflow, with side-by-side diffs
 and plan usage. Local and read-only.
 
+> **Note:** from v0.2.0 ccmon focuses on **Claude Code**; Codex monitoring is turned off for now.
+> The Codex sections below describe the parser that is still in the code but not enabled.
+
 [![CI](https://github.com/thanhson0514/cc-monitor/actions/workflows/ci.yml/badge.svg)](https://github.com/thanhson0514/cc-monitor/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/thanhson0514/cc-monitor?include_prereleases&sort=semver)](https://github.com/thanhson0514/cc-monitor/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-8ea2ff.svg)](LICENSE)

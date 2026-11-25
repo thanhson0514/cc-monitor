@@ -6,6 +6,10 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+/// Codex monitoring is switched off for now: ccmon focuses on Claude Code. The parser
+/// (`crate::codex`) stays in place; flip this to bring Codex back.
+pub const CODEX_ENABLED: bool = false;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Config {
@@ -22,7 +26,7 @@ impl Default for Config {
         Self {
             setup_done: false,
             claude: true,
-            codex: true,
+            codex: CODEX_ENABLED,
         }
     }
 }
@@ -42,10 +46,16 @@ pub fn config_path() -> PathBuf {
 }
 
 pub fn load() -> Config {
-    std::fs::read_to_string(config_path())
+    let mut c: Config = std::fs::read_to_string(config_path())
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // An older config may still have Codex on: ignore it while Codex is disabled.
+    c.codex &= CODEX_ENABLED;
+    if !c.codex && !c.claude {
+        c.claude = true;
+    }
+    c
 }
 
 pub fn save(c: &Config) -> std::io::Result<()> {

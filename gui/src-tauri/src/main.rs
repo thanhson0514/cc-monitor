@@ -527,7 +527,7 @@ fn list_history(state: State<Shared>, days: Option<u32>) -> Vec<assets::HistoryP
     } else {
         vec![]
     };
-    if cfg.codex {
+    if cfg.codex && config::CODEX_ENABLED {
         out.extend(assets::list_codex_history(
             &cc_monitor::platform::codex_home(),
             days,
@@ -712,9 +712,10 @@ fn save_setup(
     codex: bool,
     statusline: bool,
 ) -> Result<SetupInfo, String> {
+    let codex = codex && config::CODEX_ENABLED;
     let cfg = config::Config {
         setup_done: true,
-        claude,
+        claude: claude || !codex,
         codex,
     };
     config::save(&cfg).map_err(|e| e.to_string())?;
@@ -769,11 +770,13 @@ fn main() {
     let worker_pinned = pinned.clone();
     let worker_config = shared_config.clone();
     std::thread::spawn(move || {
-        discovery::Worker::new(discovery::projects_root(), opts, tx)
+        let mut worker = discovery::Worker::new(discovery::projects_root(), opts, tx)
             .with_pinned(worker_pinned)
-            .with_codex(cc_monitor::platform::codex_home())
-            .with_config(worker_config)
-            .run()
+            .with_config(worker_config);
+        if config::CODEX_ENABLED {
+            worker = worker.with_codex(cc_monitor::platform::codex_home());
+        }
+        worker.run()
     });
 
     let pump_store = store.clone();

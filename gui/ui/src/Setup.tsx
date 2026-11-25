@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api, SetupInfo } from './api';
 
-/** First-run (and settings) screen: choose which coding agents to monitor. */
+/** First-run (and settings) screen. Only Claude Code is monitored for now (Codex is disabled). */
 export function Setup({ onDone, canClose }: { onDone: () => void; canClose: boolean }) {
     const [info, setInfo] = useState<SetupInfo | null>(null);
-    const [claude, setClaude] = useState(true);
-    const [codex, setCodex] = useState(true);
     const [statusline, setStatusline] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
@@ -13,9 +11,6 @@ export function Setup({ onDone, canClose }: { onDone: () => void; canClose: bool
     useEffect(() => {
         api.setup().then((i) => {
             setInfo(i);
-            const first = !i.config.setupDone;
-            setClaude(first ? i.claudeFound : i.config.claude);
-            setCodex(first ? i.codexFound : i.config.codex);
             setStatusline(!i.statuslineWrapped);
         });
     }, []);
@@ -23,7 +18,7 @@ export function Setup({ onDone, canClose }: { onDone: () => void; canClose: bool
     const save = () => {
         setSaving(true);
         setError(null);
-        api.saveSetup(claude, codex, claude && statusline && !info?.statuslineWrapped)
+        api.saveSetup(true, false, statusline && !info?.statuslineWrapped)
             .then(() => onDone())
             .catch((e) => setError(String(e)))
             .finally(() => setSaving(false));
@@ -38,51 +33,36 @@ export function Setup({ onDone, canClose }: { onDone: () => void; canClose: bool
             <div className="setup">
                 <h2>{info.config.setupDone ? 'Cài đặt' : 'Chào mừng đến với ccmon'}</h2>
                 <p className="muted">
-                    Chọn công cụ bạn muốn theo dõi. ccmon chỉ <b>đọc</b> lịch sử phiên mà các công cụ tự ghi trên máy, không gửi dữ
-                    liệu đi đâu.
+                    ccmon theo dõi các phiên Claude Code. ccmon chỉ <b>đọc</b> lịch sử phiên mà Claude Code tự ghi trên máy, không
+                    gửi dữ liệu đi đâu.
                 </p>
 
-                <label className={`tool-opt ${claude ? 'on' : ''}`}>
-                    <input type="checkbox" checked={claude} onChange={(e) => setClaude(e.target.checked)} />
+                <div className="tool-opt on">
                     <div>
                         <div className="tool-opt-title">
                             Claude Code{' '}
                             {info.claudeFound ? <span className="chip chip-new">đã tìm thấy</span> : <span className="chip">chưa thấy</span>}
                         </div>
                         <div className="muted small">{info.claudeDir}</div>
-                        {claude && (
-                            <div className="tool-sub">
-                                {info.statuslineWrapped ? (
-                                    <span className="small">
-                                        ✓ Đã lấy Session % / Weekly % qua status line.{' '}
-                                        <button type="button" className="link-btn" onClick={removeStatusline}>
-                                            Gỡ
-                                        </button>
-                                    </span>
-                                ) : (
-                                    <label className="small">
-                                        <input type="checkbox" checked={statusline} onChange={(e) => setStatusline(e.target.checked)} /> Hiện
-                                        Session % / Weekly % / cửa sổ context: bọc status line hiện tại
-                                        {info.statusline ? <code> {info.statusline}</code> : ' (chưa có)'} bằng ccmon. Sửa{' '}
-                                        <code>settings.json</code>, có sao lưu, gỡ được.
-                                    </label>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </label>
-
-                <label className={`tool-opt ${codex ? 'on' : ''}`}>
-                    <input type="checkbox" checked={codex} onChange={(e) => setCodex(e.target.checked)} />
-                    <div>
-                        <div className="tool-opt-title">
-                            Codex{' '}
-                            {info.codexFound ? <span className="chip chip-new">đã tìm thấy</span> : <span className="chip">chưa thấy</span>}
+                        <div className="tool-sub">
+                            {info.statuslineWrapped ? (
+                                <span className="small">
+                                    ✓ Đã lấy Session % / Weekly % qua status line.{' '}
+                                    <button type="button" className="link-btn" onClick={removeStatusline}>
+                                        Gỡ
+                                    </button>
+                                </span>
+                            ) : (
+                                <label className="small">
+                                    <input type="checkbox" checked={statusline} onChange={(e) => setStatusline(e.target.checked)} /> Hiện
+                                    Session % / Weekly % / cửa sổ context: bọc status line hiện tại
+                                    {info.statusline ? <code> {info.statusline}</code> : ' (chưa có)'} bằng ccmon. Sửa{' '}
+                                    <code>settings.json</code>, có sao lưu, gỡ được.
+                                </label>
+                            )}
                         </div>
-                        <div className="muted small">{info.codexDir}</div>
-                        <div className="tool-sub small muted">Không cần cấu hình: hạn mức và token đọc thẳng từ phiên.</div>
                     </div>
-                </label>
+                </div>
 
                 {error && <div className="setup-error">{error}</div>}
                 <div className="setup-actions">
@@ -91,7 +71,7 @@ export function Setup({ onDone, canClose }: { onDone: () => void; canClose: bool
                             Huỷ
                         </button>
                     )}
-                    <button type="button" className="btn btn-primary" disabled={saving || (!claude && !codex)} onClick={save}>
+                    <button type="button" className="btn btn-primary" disabled={saving} onClick={save}>
                         {info.config.setupDone ? 'Lưu' : 'Bắt đầu'}
                     </button>
                 </div>
