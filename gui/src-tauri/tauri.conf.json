@@ -2,11 +2,14 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ccmon",
   "mainBinaryName": "ccmon-gui",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "io.github.thanhson0514.ccmon",
   "build": {
     "frontendDist": "../ui/dist",
-    "beforeBuildCommand": "cd ui && yarn install --frozen-lockfile && yarn build"
+    "beforeBuildCommand": {
+      "script": "yarn install --frozen-lockfile && yarn build",
+      "cwd": "../ui"
+    }
   },
   "app": {
     "windows": [
