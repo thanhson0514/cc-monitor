@@ -1,0 +1,736 @@
+//! One conversation thread (main session, subagent or workflow agent) built from events.
+
+use crate::event::{Block, Event, Kind, RateInfo, Usage};
+use serde_json::Value;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolState {
+    Running,
+    Ok,
+    Err,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ThreadLink {
+    Agent(String),
+    Workflow(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Item {
+    Prompt {
+        ts: Option<i64>,
+        text: String,
+    },
+    Thinking {
+        ts: Option<i64>,
+        text: String,
+        /// Thinking duration reported by Claude Code (the text itself is often not stored).
+        ms: Option<u64>,
+    },
+    Text {
+        ts: Option<i64>,
+        text: String,
+    },
+    Tool(ToolItem),
+    Compact {
+        ts: Option<i64>,
+        pre: u64,
+        post: u64,
+    },
+    System {
+        ts: Option<i64>,
+        text: String,
+    },
+    /// Start of one assistant API response (model + token usage of that request).
+    Turn {
+        ts: Option<i64>,
+        model: Option<String>,
+        usage: Option<Usage>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolItem {
+    pub id: String,
+    pub name: String,
+    pub summary: String,
+    pub input: Value,
+    pub state: ToolState,
+    pub started: Option<i64>,
+    pub ended: Option<i64>,
+    pub result: String,
+    pub persisted: Option<PathBuf>,
+    pub link: Option<ThreadLink>,
+}
+
+#[derive(Debug, Clone)]
+struct ResultInfo {
+    is_error: bool,
+    ts: Option<i64>,
+    content: String,
+    link: Option<ThreadLink>,
+}
+
+#[derive(Debug, Default)]
+pub struct Thread {
+    events: Vec<Event>,
+    by_uuid: HashMap<String, usize>,
+    leaf: Option<usize>,
+    results: HashMap<String, ResultInfo>,
+    pending: HashSet<String>,
+    tool_names: HashMap<String, String>,
+    workflow_names: HashMap<String, String>,
+    link_to_tool: HashMap<ThreadLink, String>,
+    items: Vec<Item>,
+    dirty: bool,
+    last_usage: Option<Usage>,
+    model: Option<String>,
+    effort: Option<String>,
+    title: Option<String>,
+    lines: Option<(u64, u64)>,
+    rate: Option<RateInfo>,
+    window: Option<u64>,
+    compactions: u32,
+    git_branch: Option<String>,
+    cwd: Option<String>,
+    last_tool: Option<String>,
+    first_ts: Option<i64>,
+    user_files: Vec<UserFile>,
+}
+
+/// A file the user supplied: pasted image, `@` mention of a file or directory.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UserFile {
+    pub ts: Option<i64>,
+    pub path: String,
+    pub kind: UserFileKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UserFileKind {
+    Image,
+    File,
+    Directory,
+}
+
+/// Paths in `[Image: source: /path]` markers Claude Code adds to prompts with pasted images.
+pub fn image_sources(prompt: &str) -> Vec<String> {
+    let key = "[Image: source: ";
+    let mut out = Vec::new();
+    let mut rest = prompt;
+    while let Some(i) = rest.find(key) {
+        rest = &rest[i + key.len()..];
+        if let Some(end) = rest.find(']') {
+            out.push(rest[..end].trim().to_string());
+            rest = &rest[end..];
+        }
+    }
+    out
+}
+
+impl Thread {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn push(&mut self, ev: Event) {
+        if let Some(ts) = ev.ts {
+            self.first_ts.get_or_insert(ts);
+        }
+        if let Some(b) = &ev.git_branch {
+            self.git_branch = Some(b.clone());
+        }
+        if self.cwd.is_none() {
+            self.cwd = ev.cwd.clone();
+        }
+        if let (Kind::User, Some(p)) = (&ev.kind, &ev.prompt) {
+            for path in image_sources(p) {
+                self.push_user_file(ev.ts, path, UserFileKind::Image);
+            }
+        }
+        match &ev.kind {
+            Kind::Attachment { path, is_dir } => {
+                let kind = if *is_dir {
+                    UserFileKind::Directory
+                } else {
+                    UserFileKind::File
+                };
+                self.push_user_file(ev.ts, path.clone(), kind);
+            }
+            Kind::Title(t) => {
+                self.title = Some(t.clone());
+                return;
+            }
+            Kind::CostState { added, removed } => {
+                self.lines = Some((*added, *removed));
+                return;
+            }
+            Kind::System { subtype, .. } if subtype == "compact_boundary" => self.compactions += 1,
+            Kind::Meta => {
+                if let Some(u) = ev.usage.filter(|u| u.context() > 0) {
+                    self.last_usage = Some(u);
+                }
+                if let Some(m) = &ev.model {
+                    self.model = Some(m.clone());
+                }
+                if let Some(e) = &ev.effort {
+                    self.effort = Some(e.clone());
+                }
+                if ev.rate.is_some() {
+                    self.rate = ev.rate;
+                }
+                if ev.window.is_some() {
+                    self.window = ev.window;
+                }
+                return;
+            }
+            Kind::Assistant => {
+                if let Some(u) = ev.usage {
+                    if u.context() > 0 {
+                        self.last_usage = Some(u);
+                    }
+                }
+                if let Some(m) = &ev.model {
+                    if m != "<synthetic>" {
+                        self.model = Some(m.clone());
+                    }
+                }
+                if let Some(e) = &ev.effort {
+                    self.effort = Some(e.clone());
+                }
+            }
+            _ => {}
+        }
+        for b in &ev.blocks {
+            match b {
+                Block::ToolUse { id, name, input } => {
+                    self.pending.insert(id.clone());
+                    self.tool_names.insert(id.clone(), name.clone());
+                    if name == "Workflow" {
+                        if let Some(n) = workflow_meta_name(input) {
+                            self.workflow_names.insert(id.clone(), n);
+                        }
+                    }
+                    self.last_tool = Some(name.clone());
+                }
+                Block::ToolResult {
+                    tool_use_id,
+                    is_error,
+                    content,
+                } => {
+                    self.pending.remove(tool_use_id);
+                    let link = ev.link.as_ref().and_then(|l| {
+                        l.agent_id
+                            .clone()
+                            .map(ThreadLink::Agent)
+                            .or_else(|| l.run_id.clone().map(ThreadLink::Workflow))
+                    });
+                    if let (Some(l), Some(info)) = (&link, &ev.link) {
+                        self.link_to_tool.insert(l.clone(), tool_use_id.clone());
+                        if let (ThreadLink::Workflow(_), Some(n)) = (l, &info.workflow_name) {
+                            self.workflow_names.insert(tool_use_id.clone(), n.clone());
+                        }
+                    }
+                    self.results.insert(
+                        tool_use_id.clone(),
+                        ResultInfo {
+                            is_error: *is_error,
+                            ts: ev.ts,
+                            content: content.clone(),
+                            link,
+                        },
+                    );
+                }
+                Block::Thinking(_) | Block::Text(_) => {}
+            }
+        }
+        if let Some(u) = &ev.uuid {
+            let idx = self.events.len();
+            self.by_uuid.insert(u.clone(), idx);
+            self.leaf = Some(idx);
+        }
+        self.events.push(ev);
+        self.dirty = true;
+    }
+
+    /// Items on the live branch (leaf → root via parentUuid, crossing compact boundaries).
+    pub fn items(&mut self) -> &[Item] {
+        if self.dirty {
+            self.rebuild();
+            self.dirty = false;
+        }
+        &self.items
+    }
+
+    fn rebuild(&mut self) {
+        let mut chain = Vec::new();
+        let mut seen = HashSet::new();
+        let mut cur = self.leaf;
+        while let Some(i) = cur {
+            if !seen.insert(i) {
+                break;
+            }
+            chain.push(i);
+            let ev = &self.events[i];
+            let next = ev.parent.as_ref().or(ev.logical_parent.as_ref());
+            cur = next.and_then(|p| self.by_uuid.get(p).copied());
+        }
+        chain.reverse();
+        let mut items = Vec::with_capacity(chain.len());
+        let mut last_msg: Option<&str> = None;
+        let mut turn_idx: Option<usize> = None;
+        for i in chain {
+            let ev = &self.events[i];
+            if ev.kind == Kind::Assistant {
+                if ev.msg_id.is_none() || ev.msg_id.as_deref() != last_msg {
+                    last_msg = ev.msg_id.as_deref();
+                    turn_idx = Some(items.len());
+                    items.push(Item::Turn {
+                        ts: ev.ts,
+                        model: ev.model.clone(),
+                        usage: ev.usage,
+                    });
+                } else if let (Some(t), Some(u)) = (turn_idx, ev.usage) {
+                    if let Some(Item::Turn { usage, .. }) = items.get_mut(t) {
+                        *usage = Some(u);
+                    }
+                }
+            } else if ev.kind == Kind::User {
+                last_msg = None;
+            }
+            if let Some(c) = &ev.compact {
+                items.push(Item::Compact {
+                    ts: ev.ts,
+                    pre: c.pre,
+                    post: c.post,
+                });
+                continue;
+            }
+            if ev.is_compact_summary {
+                continue;
+            }
+            match &ev.kind {
+                Kind::System { subtype, text } => {
+                    if subtype == "local_command" || subtype == "informational" {
+                        items.push(Item::System {
+                            ts: ev.ts,
+                            text: text.clone(),
+                        });
+                    }
+                    continue;
+                }
+                Kind::User => {
+                    if let Some(p) = &ev.prompt {
+                        if ev.is_meta || p.starts_with('<') {
+                            items.push(Item::System {
+                                ts: ev.ts,
+                                text: p.clone(),
+                            });
+                        } else {
+                            items.push(Item::Prompt {
+                                ts: ev.ts,
+                                text: p.clone(),
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+            for b in &ev.blocks {
+                match b {
+                    Block::Text(t) if !t.trim().is_empty() => items.push(Item::Text {
+                        ts: ev.ts,
+                        text: t.clone(),
+                    }),
+                    Block::Thinking(t) => {
+                        // One reasoning step can be stored as several thinking blocks.
+                        if let Some(Item::Thinking { text, ms, .. }) = items.last_mut() {
+                            if ev.thinking_ms.is_some() {
+                                *ms = ev.thinking_ms;
+                            }
+                            if !t.is_empty() {
+                                if !text.is_empty() {
+                                    text.push('\n');
+                                }
+                                text.push_str(t);
+                            }
+                        } else {
+                            items.push(Item::Thinking {
+                                ts: ev.ts,
+                                text: t.clone(),
+                                ms: ev.thinking_ms,
+                            });
+                        }
+                    }
+                    Block::ToolUse { id, name, input } => {
+                        let r = self.results.get(id);
+                        let summary = match self.workflow_names.get(id) {
+                            Some(n) if name == "Workflow" => format!("workflow {n}"),
+                            _ => tool_summary(name, input),
+                        };
+                        items.push(Item::Tool(ToolItem {
+                            id: id.clone(),
+                            name: name.clone(),
+                            summary,
+                            input: input.clone(),
+                            state: match r {
+                                None => ToolState::Running,
+                                Some(r) if r.is_error => ToolState::Err,
+                                Some(_) => ToolState::Ok,
+                            },
+                            started: ev.ts,
+                            ended: r.and_then(|r| r.ts),
+                            result: r.map(|r| r.content.clone()).unwrap_or_default(),
+                            persisted: r.and_then(|r| persisted_path(&r.content)),
+                            link: r.and_then(|r| r.link.clone()),
+                        }))
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.items = items;
+    }
+
+    fn push_user_file(&mut self, ts: Option<i64>, path: String, kind: UserFileKind) {
+        if !self.user_files.iter().any(|f| f.path == path) {
+            self.user_files.push(UserFile { ts, path, kind });
+        }
+    }
+
+    pub fn user_files(&self) -> &[UserFile] {
+        &self.user_files
+    }
+
+    pub fn last_usage(&self) -> Option<&Usage> {
+        self.last_usage.as_ref()
+    }
+    pub fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+    pub fn effort(&self) -> Option<&str> {
+        self.effort.as_deref()
+    }
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+    /// Plan usage limits reported inside the transcript (Codex).
+    pub fn rate(&self) -> Option<RateInfo> {
+        self.rate
+    }
+    /// Context window size reported inside the transcript (Codex).
+    pub fn window(&self) -> Option<u64> {
+        self.window
+    }
+    pub fn lines(&self) -> Option<(u64, u64)> {
+        self.lines
+    }
+    pub fn compactions(&self) -> u32 {
+        self.compactions
+    }
+    pub fn git_branch(&self) -> Option<&str> {
+        self.git_branch.as_deref()
+    }
+    pub fn cwd(&self) -> Option<&str> {
+        self.cwd.as_deref()
+    }
+    pub fn pending_tools(&self) -> usize {
+        self.pending.len()
+    }
+    pub fn last_tool_name(&self) -> Option<&str> {
+        self.last_tool.as_deref()
+    }
+    pub fn first_ts(&self) -> Option<i64> {
+        self.first_ts
+    }
+    pub fn tool_state(&self, tool_id: &str) -> Option<ToolState> {
+        if self.pending.contains(tool_id) {
+            return Some(ToolState::Running);
+        }
+        self.results.get(tool_id).map(|r| {
+            if r.is_error {
+                ToolState::Err
+            } else {
+                ToolState::Ok
+            }
+        })
+    }
+    pub fn has_tool(&self, tool_id: &str) -> bool {
+        self.tool_names.contains_key(tool_id)
+    }
+    /// Tool id in this thread that launched the given link.
+    pub fn tool_for_link(&self, link: &ThreadLink) -> Option<&str> {
+        self.link_to_tool.get(link).map(String::as_str)
+    }
+    pub fn workflow_name_for_run(&self, run_id: &str) -> Option<&str> {
+        let tool = self
+            .link_to_tool
+            .get(&ThreadLink::Workflow(run_id.to_string()))?;
+        self.workflow_names.get(tool).map(String::as_str)
+    }
+}
+
+fn workflow_meta_name(input: &Value) -> Option<String> {
+    let script = input.get("script")?.as_str()?;
+    let i = script.find("name:")?;
+    let rest = script[i + 5..].trim_start();
+    let q = rest.chars().next()?;
+    if q != '\'' && q != '"' && q != '`' {
+        return None;
+    }
+    let end = rest[1..].find(q)?;
+    Some(rest[1..1 + end].to_string())
+}
+
+pub fn persisted_path(content: &str) -> Option<PathBuf> {
+    if !content.starts_with("<persisted-output>") {
+        return None;
+    }
+    let key = "Full output saved to: ";
+    let i = content.find(key)?;
+    let rest = &content[i + key.len()..];
+    let end = rest.find('\n').unwrap_or(rest.len());
+    Some(PathBuf::from(rest[..end].trim()))
+}
+
+fn one_line(s: &str, max: usize) -> String {
+    let flat: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() > max {
+        let mut t: String = flat.chars().take(max.saturating_sub(1)).collect();
+        t.push('…');
+        t
+    } else {
+        flat
+    }
+}
+
+pub fn tool_summary(name: &str, input: &Value) -> String {
+    let s = |k: &str| input.get(k).and_then(Value::as_str);
+    let text = match name {
+        "Bash" => s("command").map(str::to_string),
+        "Read" | "Edit" | "Write" | "NotebookEdit" => {
+            s("file_path").or(s("notebook_path")).map(str::to_string)
+        }
+        "Grep" | "Glob" => s("pattern").map(|p| match s("path") {
+            Some(path) => format!("{p}  in {path}"),
+            None => p.to_string(),
+        }),
+        "Agent" | "Task" => {
+            s("description").map(|d| format!("{}: {d}", s("subagent_type").unwrap_or("agent")))
+        }
+        "Workflow" => Some(
+            workflow_meta_name(input).map_or("workflow".to_string(), |n| format!("workflow {n}")),
+        ),
+        "Skill" => s("skill").map(str::to_string),
+        "WebFetch" => s("url").map(str::to_string),
+        "WebSearch" => s("query").map(str::to_string),
+        "ToolSearch" => s("query").map(str::to_string),
+        _ => None,
+    };
+    let text = text.unwrap_or_else(|| {
+        if input.is_null() {
+            String::new()
+        } else {
+            input.to_string()
+        }
+    });
+    one_line(&text, 120)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::event::parse_line;
+
+    /// Items without per-response `Turn` markers.
+    fn content(t: &mut Thread) -> Vec<Item> {
+        t.items()
+            .iter()
+            .filter(|i| !matches!(i, Item::Turn { .. }))
+            .cloned()
+            .collect()
+    }
+
+    fn thread(lines: &[&str]) -> Thread {
+        let mut t = Thread::new();
+        for l in lines {
+            t.push(parse_line(l).expect(l));
+        }
+        t
+    }
+
+    #[test]
+    fn active_branch_hides_abandoned() {
+        let mut t = thread(&[
+            r#"{"type":"user","uuid":"A","message":{"content":"a"}}"#,
+            r#"{"type":"user","uuid":"B","parentUuid":"A","message":{"content":"b"}}"#,
+            r#"{"type":"user","uuid":"C","parentUuid":"A","message":{"content":"c"}}"#,
+        ]);
+        let texts: Vec<_> = t
+            .items()
+            .iter()
+            .map(|i| match i {
+                Item::Prompt { text, .. } => text.clone(),
+                _ => String::new(),
+            })
+            .collect();
+        assert_eq!(texts, vec!["a", "c"]);
+    }
+
+    #[test]
+    fn chain_passes_through_attachments() {
+        let mut t = thread(&[
+            r#"{"type":"user","uuid":"A","message":{"content":"a"}}"#,
+            r#"{"type":"attachment","uuid":"X","parentUuid":"A","attachment":{"type":"file"}}"#,
+            r#"{"type":"user","uuid":"B","parentUuid":"X","message":{"content":"b"}}"#,
+        ]);
+        assert_eq!(t.items().len(), 2);
+    }
+
+    #[test]
+    fn merges_consecutive_thinking() {
+        let mut t = thread(&[
+            r#"{"type":"assistant","uuid":"A","message":{"id":"m1","content":[{"type":"thinking","thinking":""}]}}"#,
+            r#"{"type":"assistant","uuid":"B","parentUuid":"A","message":{"id":"m1","usage":{"input_tokens":2,"output_tokens":9},"content":[{"type":"thinking","thinking":"x"}]}}"#,
+        ]);
+        let items = t.items().to_vec();
+        assert_eq!(items.len(), 2);
+        assert!(matches!(&items[0], Item::Turn { usage: Some(u), .. } if u.output == 9));
+        assert_eq!(
+            items[1],
+            Item::Thinking {
+                ts: None,
+                text: "x".into(),
+                ms: None
+            }
+        );
+    }
+
+    #[test]
+    fn collects_user_files() {
+        let t = thread(&[
+            r#"{"type":"user","uuid":"A","message":{"content":"xem [Image #1] [Image: source: /tmp/x/images/1.png] và [Image: source: /tmp/x/images/2.png]"}}"#,
+            r#"{"type":"attachment","uuid":"B","parentUuid":"A","attachment":{"type":"directory","path":"/repo/JOBRunner","content":""}}"#,
+        ]);
+        let f: Vec<_> = t
+            .user_files()
+            .iter()
+            .map(|f| (f.path.as_str(), f.kind))
+            .collect();
+        assert_eq!(
+            f,
+            vec![
+                ("/tmp/x/images/1.png", UserFileKind::Image),
+                ("/tmp/x/images/2.png", UserFileKind::Image),
+                ("/repo/JOBRunner", UserFileKind::Directory)
+            ]
+        );
+    }
+
+    #[test]
+    fn crosses_compact_boundary() {
+        let mut t = thread(&[
+            r#"{"type":"user","uuid":"A","message":{"content":"before"}}"#,
+            r#"{"type":"system","subtype":"compact_boundary","uuid":"CB","parentUuid":null,"logicalParentUuid":"A","compactMetadata":{"preTokens":900,"postTokens":20}}"#,
+            r#"{"type":"user","uuid":"S","parentUuid":"CB","isCompactSummary":true,"message":{"content":"summary"}}"#,
+            r#"{"type":"user","uuid":"D","parentUuid":"S","message":{"content":"after"}}"#,
+        ]);
+        assert_eq!(t.compactions(), 1);
+        let items = t.items().to_vec();
+        assert_eq!(items.len(), 3);
+        assert!(matches!(&items[0], Item::Prompt { text, .. } if text == "before"));
+        assert!(matches!(
+            items[1],
+            Item::Compact {
+                pre: 900,
+                post: 20,
+                ..
+            }
+        ));
+        assert!(matches!(&items[2], Item::Prompt { text, .. } if text == "after"));
+    }
+
+    #[test]
+    fn pairs_tool_result_with_duration_and_error() {
+        let mut t = thread(&[
+            r#"{"type":"assistant","uuid":"A","timestamp":"2026-11-25T00:00:00.000Z","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"false"}}]}}"#,
+        ]);
+        assert_eq!(t.pending_tools(), 1);
+        assert!(matches!(
+            &content(&mut t)[0],
+            Item::Tool(ToolItem {
+                state: ToolState::Running,
+                ..
+            })
+        ));
+        t.push(parse_line(r#"{"type":"user","uuid":"B","parentUuid":"A","timestamp":"2026-11-25T00:00:01.500Z","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"boom"}]}}"#).unwrap());
+        assert_eq!(t.pending_tools(), 0);
+        match &content(&mut t)[0] {
+            Item::Tool(ti) => {
+                assert_eq!(ti.state, ToolState::Err);
+                assert_eq!(ti.ended.unwrap() - ti.started.unwrap(), 1500);
+                assert_eq!(ti.result, "boom");
+                assert_eq!(ti.summary, "false");
+            }
+            i => panic!("{i:?}"),
+        }
+    }
+
+    #[test]
+    fn extracts_persisted_path() {
+        let c = "<persisted-output>\nOutput too large (35.5KB). Full output saved to: /x/tool-results/b.txt\n\nPreview";
+        assert_eq!(
+            persisted_path(c),
+            Some(PathBuf::from("/x/tool-results/b.txt"))
+        );
+        assert_eq!(persisted_path("plain"), None);
+    }
+
+    #[test]
+    fn links_agent_and_workflow() {
+        let mut t = thread(&[
+            r#"{"type":"assistant","uuid":"A","message":{"content":[{"type":"tool_use","id":"t1","name":"Agent","input":{"description":"Audit","subagent_type":"Explore"}},{"type":"tool_use","id":"t2","name":"Workflow","input":{"script":"export const meta = {\n  name: 'review-x',\n}"}}]}}"#,
+            r#"{"type":"user","uuid":"B","parentUuid":"A","toolUseResult":{"agentId":"ag1","status":"async_launched"},"message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}"#,
+            r#"{"type":"user","uuid":"C","parentUuid":"B","toolUseResult":{"runId":"wf_1","workflowName":"review-x"},"message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"ok"}]}}"#,
+        ]);
+        assert_eq!(
+            t.tool_for_link(&ThreadLink::Agent("ag1".into())),
+            Some("t1")
+        );
+        assert_eq!(t.workflow_name_for_run("wf_1"), Some("review-x"));
+        let items = content(&mut t);
+        assert!(
+            matches!(&items[0], Item::Tool(ToolItem { link: Some(ThreadLink::Agent(a)), summary, .. }) if a == "ag1" && summary == "Explore: Audit")
+        );
+        assert!(
+            matches!(&items[1], Item::Tool(ToolItem { link: Some(ThreadLink::Workflow(w)), summary, .. }) if w == "wf_1" && summary == "workflow review-x")
+        );
+    }
+
+    #[test]
+    fn tool_summary_per_tool() {
+        use serde_json::json;
+        assert_eq!(
+            tool_summary("Read", &json!({"file_path":"/a/b.rs"})),
+            "/a/b.rs"
+        );
+        assert_eq!(tool_summary("Grep", &json!({"pattern":"foo"})), "foo");
+        assert_eq!(
+            tool_summary("Bash", &json!({"command":"ls\n  -la"})),
+            "ls -la"
+        );
+        assert!(
+            tool_summary("Zzz", &json!({"k":"x".repeat(500)}))
+                .chars()
+                .count()
+                <= 120
+        );
+    }
+}

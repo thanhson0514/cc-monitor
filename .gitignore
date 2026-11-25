@@ -1,0 +1,4 @@
+target/
+gui/ui/node_modules/
+gui/ui/dist/
+demo-data/

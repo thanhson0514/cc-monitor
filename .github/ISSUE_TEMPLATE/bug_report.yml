@@ -1,0 +1,22 @@
+name: Bug report
+description: Something does not work as expected
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes: { label: ccmon version, placeholder: "0.1.0" }
+    validations: { required: true }
+  - type: dropdown
+    id: os
+    attributes: { label: Operating system, options: [Windows, Linux, macOS, Other] }
+    validations: { required: true }
+  - type: dropdown
+    id: tool
+    attributes: { label: Coding agent, multiple: true, options: [Claude Code, Codex] }
+  - type: textarea
+    id: what
+    attributes: { label: What happened? What did you expect?, description: Steps to reproduce help a lot. }
+    validations: { required: true }
+  - type: textarea
+    id: extra
+    attributes: { label: Screenshots / logs, description: "Please remove private code or prompts before posting." }

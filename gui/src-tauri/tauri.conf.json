@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ccmon",
+  "mainBinaryName": "ccmon-gui",
+  "version": "0.1.0",
+  "identifier": "io.github.thanhson0514.ccmon",
+  "build": {
+    "frontendDist": "../ui/dist",
+    "beforeBuildCommand": "cd ui && yarn install --frozen-lockfile && yarn build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "ccmon — Claude Code & Codex monitor",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 720,
+        "minHeight": 480
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "msi",
+      "appimage",
+      "deb"
+    ],
+    "publisher": "Lê Thanh Sơn",
+    "copyright": "Copyright (c) 2026 Lê Thanh Sơn. MIT License.",
+    "license": "MIT",
+    "licenseFile": "../../LICENSE",
+    "homepage": "https://thanhson0514.github.io/cc-monitor",
+    "category": "DeveloperTool",
+    "shortDescription": "Watch Claude Code and Codex sessions, sub-agents and workflows live",
+    "longDescription": "ccmon is a read-only desktop monitor for AI coding agents. It reads the session transcripts Claude Code and Codex already write on your machine and shows every step: prompts, tool calls, sub-agents, workflows, files changed (with side-by-side diffs), images and plan usage.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  }
+}

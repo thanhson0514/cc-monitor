@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: gui/ui/yarn.lock
+      - name: Build frontend
+        working-directory: gui/ui
+        run: yarn install --frozen-lockfile && yarn build
+      - name: Tests
+        run: cargo test --workspace
+
+  smoke:
+    name: Smoke test (${{ matrix.os }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf xvfb imagemagick
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: gui/ui/yarn.lock
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build app
+        run: |
+          cd gui/ui && yarn install --frozen-lockfile && yarn build && cd ../..
+          cargo build --release -p ccmon-gui -p cc-monitor
+      - name: Run on demo data and take a screenshot (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $demo = Join-Path $PWD "demo-data"
+          New-Item -ItemType Directory -Force (Join-Path $demo "tmp") | Out-Null
+          $env:TEMP = Join-Path $demo "tmp"; $env:TMP = $env:TEMP
+          $vars = python demo/make_demo.py $demo | ConvertFrom-Json
+          foreach ($p in $vars.PSObject.Properties) { Set-Item "env:$($p.Name)" $p.Value }
+          "{`"session_id`":`"t`"}" | .\target\release\ccmon.exe tee -- echo tee-ok
+          $app = Start-Process .\target\release\ccmon-gui.exe -PassThru
+          Start-Sleep -Seconds 20
+          if ($app.HasExited) { throw "ccmon-gui exited early with code $($app.ExitCode)" }
+          Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+          $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+          $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+          [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+          $bmp.Save((Join-Path $PWD "smoke-windows.png"))
+          Stop-Process -Id $app.Id
+      - name: Run on demo data and take a screenshot (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          demo="$PWD/demo-data"; mkdir -p "$demo/tmp"; export TMPDIR="$demo/tmp"
+          eval "$(python demo/make_demo.py "$demo" | python -c 'import json,sys,shlex; [print(f"export {k}={shlex.quote(v)}") for k,v in json.load(sys.stdin).items()]')"
+          echo '{"session_id":"t"}' | ./target/release/ccmon tee -- echo tee-ok
+          xvfb-run -a -s "-screen 0 1400x900x24" bash -c '
+            ./target/release/ccmon-gui & pid=$!
+            sleep 20
+            kill -0 $pid || { echo "ccmon-gui exited early"; exit 1; }
+            import -window root smoke-linux.png
+            kill $pid'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-${{ matrix.os }}
+          path: smoke-*.png
+          if-no-files-found: warn
