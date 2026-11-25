@@ -1,8 +1,12 @@
 name: Release
 
-# Push a tag like v0.1.0 to build installers and attach them to a draft GitHub Release.
+# Builds installers and attaches them to a draft GitHub Release. Triggers:
+# - push to main: if the version in Cargo.toml has no tag yet, tag HEAD as v<version>
+#   and release it (bump the version in a PR, merge, done); otherwise nothing happens.
+# - push a tag like v0.1.0 by hand, or run manually for an existing tag.
 on:
   push:
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -13,12 +17,45 @@ on:
 permissions:
   contents: write
 
-env:
-  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  create-release:
+  resolve:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.t.outputs.tag }}
+      release: ${{ steps.t.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: t
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+            tag="v$version"
+            if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+              echo "$tag already exists: nothing to release."
+              echo "release=false" >> "$GITHUB_OUTPUT"
+            else
+              # A tag pushed with GITHUB_TOKEN does not re-trigger this workflow.
+              git tag "$tag" "$GITHUB_SHA"
+              git push origin "$tag"
+              echo "Tagged $GITHUB_SHA as $tag."
+              echo "release=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            tag="${{ github.event.inputs.tag || github.ref_name }}"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  create-release:
+    needs: resolve
+    if: needs.resolve.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.resolve.outputs.tag }}
     outputs:
       id: ${{ steps.rel.outputs.id }}
     steps:
@@ -32,7 +69,9 @@ jobs:
           echo "id=$(gh release view "$TAG" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
 
   desktop:
-    needs: create-release
+    needs: [resolve, create-release]
+    env:
+      TAG: ${{ needs.resolve.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
