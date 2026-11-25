@@ -38,7 +38,7 @@ python3 demo/make_demo.py /tmp/ccmon-demo   # prints env vars to export
 | `src/` | Core library (`cc_monitor`): Claude Code transcript parser, live store, TUI binary `ccmon` |
 | `gui/src-tauri/` | Desktop app backend (Tauri 2) |
 | `gui/ui/` | Desktop app frontend (React + Vite) |
-| `website/` | Landing page (GitHub Pages) |
+| `website/` | Landing page (GitHub Pages, <https://cc-monitor.online>) |
 | `demo/` | Demo data generator used for screenshots and CI smoke tests |
 
 Architecture notes: [capability catalog and control layer](docs/architecture/capabilities.md)
