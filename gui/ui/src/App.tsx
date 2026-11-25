@@ -5,6 +5,7 @@ import { Chat } from './Chat';
 import { Sidebar, Viewer } from './Sidebar';
 import { ChangesPanel } from './Changes';
 import { Setup } from './Setup';
+import { Library } from './Library';
 import logo from './assets/logo.png';
 
 const PAGE = 400;
@@ -374,7 +375,27 @@ function WorkflowView({ rows, wfKey, onSelect }: { rows: TreeRow[]; wfKey: strin
     );
 }
 
+export type Page = 'thread' | 'library' | 'agents';
+
+export function PageNav({ page, onPage }: { page: Page; onPage: (p: Page) => void }) {
+    const items: [Page, string, string][] = [
+        ['thread', 'Luồng', 'Xem luồng (Ctrl+1)'],
+        ['library', 'Thư viện', 'Skills, plugin, MCP (Ctrl+2)'],
+        ['agents', 'Agents', 'Agents và workflow (Ctrl+3)']
+    ];
+    return (
+        <div className="page-nav">
+            {items.map(([p, label, title]) => (
+                <button key={p} type="button" className={`sb-toggle ${page === p ? 'on' : ''}`} onClick={() => onPage(p)} title={title}>
+                    {label}
+                </button>
+            ))}
+        </div>
+    );
+}
+
 export default function App() {
+    const [page, setPage] = useState<Page>('thread');
     const [rows, setRows] = useState<TreeRow[]>([]);
     const [selected, setSelected] = useState<string | null>(null);
     const [userPicked, setUserPicked] = useState(false);
@@ -405,9 +426,13 @@ export default function App() {
     }, [treeOpen]);
     useEffect(() => {
         const k = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+            if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+            if (e.key.toLowerCase() === 'b') {
                 e.preventDefault();
                 setTreeOpen((o) => !o);
+            } else if (e.key === '1' || e.key === '2' || e.key === '3') {
+                e.preventDefault();
+                setPage((['thread', 'library', 'agents'] as const)[Number(e.key) - 1]);
             }
         };
         window.addEventListener('keydown', k);
@@ -552,7 +577,7 @@ export default function App() {
     };
 
     return (
-        <div className={`app ${showSidebar ? 'with-sidebar' : ''} ${treeOpen ? '' : 'tree-collapsed'}`}>
+        <div className={`app ${showSidebar && page === 'thread' ? 'with-sidebar' : ''} ${treeOpen ? '' : 'tree-collapsed'}`}>
             {treeOpen ? (
                 <Tree
                     rows={rows}
@@ -565,7 +590,20 @@ export default function App() {
             ) : (
                 <TreeRail rows={rows} selected={selected} onSelect={select} onExpand={() => setTreeOpen(true)} />
             )}
-            <main className="main">
+            {page !== 'thread' && (
+                <main className="main">
+                    <header className="thread-head">
+                        <span className="thread-title">{page === 'library' ? 'Thư viện' : 'Agents'}</span>
+                        <PageNav page={page} onPage={setPage} />
+                    </header>
+                    {page === 'library' ? (
+                        <Library sid={selected ? selected.split(':')[1] ?? null : null} sessionLabel={row?.label ?? null} />
+                    ) : (
+                        <div className="muted pad">Sắp có.</div>
+                    )}
+                </main>
+            )}
+            <main className="main" style={page !== 'thread' ? { display: 'none' } : undefined}>
                 <header className="thread-head">
                     {history.length > 0 && (
                         <button className="back-btn" type="button" onClick={back} title="Quay lại luồng trước">
@@ -574,6 +612,7 @@ export default function App() {
                     )}
                     <span className="thread-title">{row?.label ?? view?.title ?? 'ccmon'}</span>
                     {row && <span className={`badge st-${row.status}`}>{row.status}</span>}
+                    <PageNav page={page} onPage={setPage} />
                     <div className="panel-btns">
                         <button
                             type="button"
@@ -635,10 +674,10 @@ export default function App() {
                 <ActivityBar a={activityOf(view && view.key === selected ? view : null, row, rows)} now={now} />
                 <StatusBar s={status} />
             </main>
-            {panel === 'assets' && selected && (
+            {page === 'thread' && panel === 'assets' && selected && (
                 <Sidebar nodeKey={selected} refreshTick={Math.floor(assetTick / 8)} onOpenThread={select} />
             )}
-            {panel === 'changes' && selected && <ChangesPanel nodeKey={selected} refreshTick={Math.floor(assetTick / 8)} initial={startup.diff} />}
+            {page === 'thread' && panel === 'changes' && selected && <ChangesPanel nodeKey={selected} refreshTick={Math.floor(assetTick / 8)} initial={startup.diff} />}
             {setup && (
                 <Setup
                     canClose={setup === 'settings'}

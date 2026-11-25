@@ -211,7 +211,32 @@ export interface SetupInfo {
     statuslineWrapped: boolean;
 }
 
+export type CapKind = 'skill' | 'plugin' | 'mcp' | 'agent' | 'workflow';
+export type CapScope = 'user' | 'project' | 'builtIn' | 'managed' | { plugin: string };
+
+export interface Capability {
+    kind: CapKind;
+    id: string;
+    name: string;
+    description: string;
+    scope: CapScope;
+    path: string | null;
+    enabledGlobally: boolean;
+    meta: Record<string, unknown>;
+}
+
+export interface Usage {
+    kind: CapKind;
+    id: string;
+    state: 'unavailable' | 'available' | 'used';
+    count: number;
+    last: number | null;
+}
+
 export const api = {
+    catalog: (cwd: string | null) => invoke<Capability[]>('get_catalog', { cwd }),
+    sessionCwd: (sid: string) => invoke<string | null>('get_session_cwd', { sid }),
+    sessionUsage: (sid: string) => invoke<Usage[]>('get_session_usage', { sid }),
     setup: () => invoke<SetupInfo>('get_setup'),
     saveSetup: (claude: boolean, codex: boolean, statusline: boolean) =>
         invoke<SetupInfo>('save_setup', { claude, codex, statusline }),

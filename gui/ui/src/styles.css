@@ -368,3 +368,30 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .bgs-killed, .bgs-unknown { color: var(--muted); }
 .bgtask .more-lines { padding-left: 0; }
 .bg-out { margin-top: 4px; }
+
+/* page nav + library */
+.page-nav { margin-left: auto; display: flex; gap: 6px; }
+.page-nav + .panel-btns { margin-left: 12px; }
+.lib { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.lib-bar { display: flex; align-items: center; gap: 10px; padding: 10px 20px; border-bottom: 1px solid var(--border); }
+.lib-tabs { display: flex; gap: 6px; }
+.lib-filter { margin-left: auto; width: 240px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 5px 10px; font: inherit; font-size: 12px; }
+.lib-filter:focus { outline: none; border-color: #333a66; }
+.lib-list { overflow-y: auto; flex: 1; padding: 6px 20px 20px; }
+.lib-head, .lib-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(0, 3fr) 120px 90px 120px 56px; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.lib-head { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); position: sticky; top: 0; background: var(--bg); }
+.lib-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-desc { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); justify-self: start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip.scope-user { color: var(--blue); }
+.chip.scope-project { color: var(--teal); }
+.chip.scope-plugin { color: var(--purple); }
+.use-used { color: var(--green); font-size: 12px; }
+.use-available { color: var(--text); font-size: 12px; }
+.use-unavailable { color: var(--muted); font-size: 12px; }
+.glob-on { color: var(--green); font-size: 12px; }
+.glob-off { color: var(--muted); font-size: 12px; }
+.switch { width: 32px; height: 18px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); position: relative; justify-self: end; opacity: .5; cursor: not-allowed; }
+.switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); }
+.switch.on { background: #232744; }
+.switch.on::after { left: 16px; background: var(--accent); }

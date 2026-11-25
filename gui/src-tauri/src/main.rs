@@ -9,6 +9,7 @@
 
 mod assets;
 mod changes;
+mod cmd_catalog;
 
 use cc_monitor::bgtask::{BgKind, BgState, BgTask};
 use cc_monitor::config::{self, SharedConfig};
@@ -926,7 +927,10 @@ fn main() {
             remove_statusline,
             get_diff,
             preview_file,
-            tail_task_output
+            tail_task_output,
+            cmd_catalog::get_catalog,
+            cmd_catalog::get_session_usage,
+            cmd_catalog::get_session_cwd
         ])
         .run(tauri::generate_context!())
         .expect("không khởi động được ccmon GUI");
