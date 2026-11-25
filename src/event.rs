@@ -63,6 +63,18 @@ pub enum Kind {
         added: u64,
         removed: u64,
     },
+    /// A `<task-notification>` about a finished background task. Stays in the
+    /// `parentUuid` chain like `Link`.
+    TaskNotice(TaskNotice),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskNotice {
+    pub task_id: String,
+    pub tool_use_id: Option<String>,
+    pub status: String,
+    pub summary: String,
+    pub output_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -106,6 +118,8 @@ pub struct Event {
     pub rate: Option<RateInfo>,
     /// Context window size reported by the tool (Codex `model_context_window`).
     pub window: Option<u64>,
+    /// `toolUseResult.backgroundTaskId` of a tool result that started a background task.
+    pub bg_task_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -140,6 +154,7 @@ impl Event {
             thinking_ms: None,
             rate: None,
             window: None,
+            bg_task_id: None,
         }
     }
 }
@@ -221,8 +236,52 @@ fn quick_skip(line: &str) -> bool {
     String::from_utf8_lossy(head).contains("\"type\":\"api-request")
 }
 
+fn unescape_html(s: &str) -> String {
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+}
+
+fn tag<'a>(s: &'a str, name: &str) -> Option<&'a str> {
+    let open = format!("<{name}>");
+    let start = s.find(&open)? + open.len();
+    let end = start + s[start..].find(&format!("</{name}>"))?;
+    Some(s[start..end].trim())
+}
+
+/// Parse the `<task-notification>` XML-ish block Claude Code queues when a background
+/// task finishes. Tolerant: only `task-id` is required.
+pub fn parse_task_notification(s: &str) -> Option<TaskNotice> {
+    let body = &s[s.find("<task-notification>")?..];
+    let t = |n: &str| tag(body, n).filter(|v| !v.is_empty()).map(unescape_html);
+    Some(TaskNotice {
+        task_id: t("task-id")?,
+        tool_use_id: t("tool-use-id"),
+        status: t("status").unwrap_or_default(),
+        summary: t("summary").unwrap_or_default(),
+        output_file: t("output-file"),
+    })
+}
+
 fn attachment_event(line: &str, head: &Head) -> Option<Event> {
     let mut ev = link_event(head)?;
+    if line.contains("queued_command") && line.contains("<task-notification>") {
+        if let Ok(raw) = serde_json::from_str::<Raw>(line) {
+            let notice = raw
+                .attachment
+                .as_ref()
+                .filter(|a| a.get("type").and_then(Value::as_str) == Some("queued_command"))
+                .and_then(|a| a.get("prompt").and_then(Value::as_str))
+                .and_then(parse_task_notification);
+            if let Some(n) = notice {
+                ev.kind = Kind::TaskNotice(n);
+                ev.ts = raw.timestamp.as_deref().and_then(parse_ts);
+                return Some(ev);
+            }
+        }
+    }
     let head_bytes = &line.as_bytes()[..line.len().min(4096)];
     let has = |pat: &[u8]| head_bytes.windows(pat.len()).any(|w| w == pat);
     if !(has(b"\"type\":\"file\"") || has(b"\"type\":\"directory\"")) {
@@ -309,6 +368,7 @@ pub fn parse_line(line: &str) -> Option<Event> {
         thinking_ms: raw.thinking_duration_ms,
         rate: None,
         window: None,
+        bg_task_id: None,
     };
 
     if let Some(meta) = raw.compact_metadata {
@@ -328,6 +388,7 @@ pub fn parse_line(line: &str) -> Option<Event> {
         if link.agent_id.is_some() || link.run_id.is_some() {
             ev.link = Some(link);
         }
+        ev.bg_task_id = s("backgroundTaskId");
     }
 
     if let Some(msg) = raw.message {
@@ -367,6 +428,11 @@ pub fn parse_line(line: &str) -> Option<Event> {
             .collect();
         ev.prompt = Some(text.join("\n"));
         ev.blocks.clear();
+    }
+    if ev.kind == Kind::User {
+        if let Some(n) = ev.prompt.as_deref().and_then(parse_task_notification) {
+            ev.kind = Kind::TaskNotice(n);
+        }
     }
     Some(ev)
 }
@@ -584,5 +650,60 @@ mod tests {
     fn truncate_respects_char_boundary() {
         let s = truncate("ăăăă".to_string(), 3);
         assert!(s.starts_with('ă'));
+    }
+
+    #[test]
+    fn parses_task_notification_attachment() {
+        let l = r#"{"type":"attachment","uuid":"u1","parentUuid":"p","attachment":{"type":"queued_command","prompt":"<task-notification>\n<task-id>b9b5g4q3w</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n<output-file>/tmp/claude-1000/x/tasks/b9b5g4q3w.output</output-file>\n<status>failed</status>\n<summary>Background command \"a &amp;&amp; b\" failed (exit code 1)</summary>\n</task-notification>"}}"#;
+        let e = parse_line(l).unwrap();
+        assert_eq!(
+            e.kind,
+            Kind::TaskNotice(TaskNotice {
+                task_id: "b9b5g4q3w".into(),
+                tool_use_id: Some("toolu_1".into()),
+                status: "failed".into(),
+                summary: "Background command \"a && b\" failed (exit code 1)".into(),
+                output_file: Some("/tmp/claude-1000/x/tasks/b9b5g4q3w.output".into())
+            })
+        );
+        assert_eq!(e.uuid.as_deref(), Some("u1"));
+        assert_eq!(e.parent.as_deref(), Some("p"));
+    }
+
+    #[test]
+    fn queued_command_without_notification_stays_link() {
+        let e = parse_line(r#"{"type":"attachment","uuid":"u","attachment":{"type":"queued_command","prompt":"hello"}}"#).unwrap();
+        assert_eq!(e.kind, Kind::Link);
+    }
+
+    #[test]
+    fn reads_background_task_id_from_tool_use_result() {
+        let l = r#"{"type":"user","uuid":"u2","toolUseResult":{"backgroundTaskId":"bqat3cqah"},"message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"Command running in background with ID: bqat3cqah."}]}}"#;
+        assert_eq!(
+            parse_line(l).unwrap().bg_task_id.as_deref(),
+            Some("bqat3cqah")
+        );
+    }
+
+    #[test]
+    fn notification_also_found_in_user_text() {
+        let body = "<task-notification>\\n<task-id>t9</task-id>\\n<status>completed</status>\\n<summary>it&#39;s done</summary>\\n</task-notification>";
+        for content in [
+            format!(r#""{body}""#),
+            format!(r#"[{{"type":"text","text":"{body}"}}]"#),
+        ] {
+            let l = format!(
+                r#"{{"type":"user","uuid":"u","parentUuid":"p","message":{{"content":{content}}}}}"#
+            );
+            let e = parse_line(&l).unwrap();
+            let Kind::TaskNotice(n) = e.kind else {
+                panic!("not a notice")
+            };
+            assert_eq!(
+                (n.task_id.as_str(), n.status.as_str(), n.summary.as_str()),
+                ("t9", "completed", "it's done")
+            );
+            assert_eq!(n.tool_use_id, None);
+        }
     }
 }
