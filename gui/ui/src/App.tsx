@@ -8,6 +8,7 @@ import { ChangesPanel } from './Changes';
 import { Setup } from './Setup';
 import { Library } from './Library';
 import { Agents } from './Agents';
+import { SubagentControl } from './SubagentControl';
 import { Composer } from './Composer';
 import { AppHeader, AssetsIcon, DiffIcon, HeadIconBtn, Page, PAGE_TITLE } from './Header';
 import logo from './assets/logo.png';
@@ -881,6 +882,7 @@ export default function App() {
                                       : row?.label ?? view?.title ?? 'ccmon'}
                             </span>
                             {row && !newCwd && !starting && <span className={`badge st-${row.status}`}>{row.status}</span>}
+                            {view?.kind === 'agent' && view.key === selected && !starting && !newCwd && <SubagentControl agentKey={view.key} />}
                             {!following && (
                                 <button
                                     className="follow-btn"

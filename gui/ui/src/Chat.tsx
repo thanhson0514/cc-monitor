@@ -2,6 +2,7 @@ import { memo, useState } from 'react';
 import { Draft, DraftBlock, fmtDur, fmtTime, fmtTokens, Item, ThreadView } from './api';
 import { Markdown } from './Markdown';
 import { InlineImage, usePathOpener } from './open';
+import { SubagentControl } from './SubagentControl';
 import { ToolCard, ToolItem } from './Tools';
 
 type Part = Exclude<Item, { type: 'prompt' } | { type: 'system' } | { type: 'compact' }>;
@@ -157,6 +158,7 @@ function AgentCard({ tool, onOpen }: { tool: ToolItem; onOpen: (key: string) => 
                     {STATE_ICON[status]} {status}
                     {link.progress ? ` · ${link.progress[0]}/${link.progress[1]}` : ''}
                 </span>
+                {link.kind === 'agent' && link.key && <SubagentControl agentKey={link.key} compact />}
                 {link.key && (
                     <button className="link-btn" type="button" onClick={() => onOpen(link.key!)}>
                         Mở luồng →

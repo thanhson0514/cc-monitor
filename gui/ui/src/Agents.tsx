@@ -202,7 +202,7 @@ function Detail({
     );
 }
 
-function AgentForm({
+export function AgentForm({
     initial,
     project,
     onClose,
