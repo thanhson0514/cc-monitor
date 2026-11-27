@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title data-vi="Hướng dẫn sử dụng — ccmon">User guide — ccmon</title>
+  <meta name="description" content="How to install, set up and use ccmon, the local monitor and control center for Claude Code sessions." />
+  <link rel="canonical" href="https://cc-monitor.online/docs.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://cc-monitor.online/docs.html" />
+  <meta property="og:title" content="User guide — ccmon" />
+  <meta property="og:description" content="How to install, set up and use ccmon, the local monitor and control center for Claude Code sessions." />
+  <meta property="og:image" content="https://cc-monitor.online/assets/screen-main.png" />
+  <link rel="icon" href="assets/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/site.css" />
+  <link rel="stylesheet" href="assets/docs.css" />
+  <script src="assets/docs.js"></script>
+</head>
+<body>
+  <!-- Generated layout: keep the nav, sidebar and footer in sync across the docs pages. -->
+  <nav>
+    <div class="wrap">
+      <a class="logo" href="index.html"><img src="assets/logo.png" alt="" /> ccmon</a>
+      <div class="links">
+        <a class="hide-sm" href="index.html"><span class="l-en">Home</span><span class="l-vi">Trang chủ</span></a>
+        <a href="docs.html" class="on"><span class="l-en">Docs</span><span class="l-vi">Tài liệu</span></a>
+        <a class="hide-sm" href="contributing.html"><span class="l-en">Contributing</span><span class="l-vi">Đóng góp</span></a>
+        <a href="https://github.com/wik1ngst-1103/cc-monitor">GitHub</a>
+        <div class="lang"><button data-lang="en" class="on">EN</button><button data-lang="vi">VI</button></div>
+      </div>
+    </div>
+  </nav>
+
+  <header class="doc-hero">
+    <div class="wrap">
+      <div class="eyebrow"><span class="l-en">Documentation</span><span class="l-vi">Tài liệu</span></div>
+      <h1><span class="l-en">User guide</span><span class="l-vi">Hướng dẫn sử dụng</span></h1>
+      <p class="lead"><span class="l-en">Install ccmon, set it up for Claude Code, and get to know the session tree, timeline, Changes, Library, Agents, the composer and the terminal UI.</span><span class="l-vi">Cài ccmon, thiết lập cho Claude Code, và làm quen với cây phiên, timeline, Thay đổi, Thư viện, Agents, ô soạn và giao diện terminal.</span></p>
+    </div>
+  </header>
+
+  <div class="wrap doc-layout">
+    <aside class="doc-side" aria-label="Documentation">
+      <div class="grp">
+        <div class="grp-t"><span class="l-en">Pages</span><span class="l-vi">Các trang</span></div>
+        <div class="lst">
+        <a href="docs.html" class="on" aria-current="page"><span class="l-en">User guide</span><span class="l-vi">Hướng dẫn sử dụng</span></a>
+        <a href="contributing.html"><span class="l-en">Contributing</span><span class="l-vi">Đóng góp</span></a>
+        <a href="privacy.html"><span class="l-en">Privacy</span><span class="l-vi">Quyền riêng tư</span></a>
+        <a href="security.html"><span class="l-en">Security</span><span class="l-vi">Bảo mật</span></a>
+        <a href="code-of-conduct.html"><span class="l-en">Code of conduct</span><span class="l-vi">Quy tắc ứng xử</span></a>
+        <a href="license.html"><span class="l-en">License</span><span class="l-vi">Giấy phép</span></a>
+        </div>
+      </div>
+      <div class="grp toc">
+        <div class="grp-t"><span class="l-en">On this page</span><span class="l-vi">Trong trang này</span></div>
+        <div class="lst">
+        <a href="#overview"><span class="l-en">Overview</span><span class="l-vi">Tổng quan</span></a>
+        <a href="#install"><span class="l-en">Installation</span><span class="l-vi">Cài đặt</span></a>
+        <a href="#first-run"><span class="l-en">First run &amp; setup</span><span class="l-vi">Lần chạy đầu &amp; thiết lập</span></a>
+        <a href="#ui"><span class="l-en">The main window</span><span class="l-vi">Cửa sổ chính</span></a>
+        <a href="#library"><span class="l-en">Library</span><span class="l-vi">Thư viện</span></a>
+        <a href="#agents"><span class="l-en">Agents &amp; workflows</span><span class="l-vi">Agents &amp; workflow</span></a>
+        <a href="#composer"><span class="l-en">Composer: run sessions</span><span class="l-vi">Ô soạn: chạy session</span></a>
+        <a href="#shortcuts"><span class="l-en">Keyboard shortcuts</span><span class="l-vi">Phím tắt</span></a>
+        <a href="#tui"><span class="l-en">Terminal UI</span><span class="l-vi">Giao diện terminal</span></a>
+        <a href="#config"><span class="l-en">Configuration &amp; files</span><span class="l-vi">Cấu hình &amp; file</span></a>
+        <a href="#troubleshooting"><span class="l-en">Troubleshooting &amp; FAQ</span><span class="l-vi">Xử lý sự cố &amp; FAQ</span></a>
+        </div>
+      </div>
+    </aside>
+
+    <main class="prose">
+<section id="overview" data-en="Overview" data-vi="Tổng quan">
+  <h2><span class="l-en">Overview</span><span class="l-vi">Tổng quan</span></h2>
+  <div class="l-en">
+    <p>ccmon reads the transcripts Claude Code already writes on your machine (<code>~/.claude/projects/**/*.jsonl</code>) and shows them as a live, structured view: the main session, every sub-agent and workflow agent, each tool call, background tasks, the files that changed and your plan usage. It comes in two forms:</p>
+    <ul>
+      <li><b>Desktop app</b> (<code>ccmon-gui</code>, built with Tauri) for Windows and Linux — the full experience, including the Library, Agents and the composer for running sessions.</li>
+      <li><b>Terminal UI</b> (<code>ccmon</code>) — a read-only session tree and timeline in your terminal, plus the <code>setup</code> / <code>uninstall</code> / <code>tee</code> helpers for the status line.</li>
+    </ul>
+    <p>Watching is read-only. ccmon only writes when you act: its own settings, agent files you save from the Agents page, and — if you opt in — a wrapper around your Claude Code status line. See <a href="privacy.html">Privacy</a> for the full list.</p>
+    <div class="callout warn"><p><span class="t">Interface language.</span> The desktop app and the terminal UI currently ship with a Vietnamese interface; an English UI is planned. This guide names each control in English and gives the Vietnamese label in quotes, e.g. <b>+ Session mới…</b> (“new session”).</p></div>
+  </div>
+  <div class="l-vi">
+    <p>ccmon đọc transcript mà Claude Code vốn đã ghi trên máy bạn (<code>~/.claude/projects/**/*.jsonl</code>) và hiển thị chúng thành một màn hình có cấu trúc, cập nhật trực tiếp: phiên chính, mọi subagent và agent của workflow, từng lần gọi tool, tác vụ nền, các file đã thay đổi và hạn mức gói. Có hai dạng:</p>
+    <ul>
+      <li><b>Ứng dụng desktop</b> (<code>ccmon-gui</code>, xây bằng Tauri) cho Windows và Linux — đầy đủ tính năng, gồm Thư viện, Agents và ô soạn để chạy session.</li>
+      <li><b>Giao diện terminal</b> (<code>ccmon</code>) — cây phiên và timeline chỉ đọc ngay trong terminal, kèm các lệnh <code>setup</code> / <code>uninstall</code> / <code>tee</code> cho status line.</li>
+    </ul>
+    <p>Theo dõi thì chỉ đọc. ccmon chỉ ghi khi bạn thao tác: cài đặt riêng của nó, file agent bạn lưu từ trang Agents, và — nếu bạn đồng ý — lớp bọc quanh status line của Claude Code. Xem danh sách đầy đủ ở trang <a href="privacy.html">Quyền riêng tư</a>.</p>
+  </div>
+</section>
+
+<section id="install" data-en="Installation" data-vi="Cài đặt">
+  <h2><span class="l-en">Installation</span><span class="l-vi">Cài đặt</span></h2>
+  <div class="l-en">
+    <p>Every release on <a href="https://github.com/wik1ngst-1103/cc-monitor/releases/latest">GitHub Releases</a> is built by GitHub Actions on Windows and Ubuntu 22.04 (x64). There is no macOS build at the moment.</p>
+  </div>
+  <div class="l-vi">
+    <p>Mỗi bản phát hành trên <a href="https://github.com/wik1ngst-1103/cc-monitor/releases/latest">GitHub Releases</a> được GitHub Actions build trên Windows và Ubuntu 22.04 (x64). Hiện chưa có bản cho macOS.</p>
+  </div>
+  <div class="table-wrap"><table>
+    <thead><tr><th><span class="l-en">File</span><span class="l-vi">File</span></th><th><span class="l-en">What it is</span><span class="l-vi">Là gì</span></th></tr></thead>
+    <tbody>
+      <tr><td><code>ccmon_&lt;version&gt;_x64-setup.exe</code></td><td class="wrap-ok"><span class="l-en">Windows 10/11 installer (NSIS). Installs for your user only, no admin rights needed; downloads WebView2 if it is missing.</span><span class="l-vi">Bộ cài Windows 10/11 (NSIS). Cài cho riêng tài khoản của bạn, không cần quyền admin; tự tải WebView2 nếu máy chưa có.</span></td></tr>
+      <tr><td><code>ccmon_&lt;version&gt;_x64_*.msi</code></td><td class="wrap-ok"><span class="l-en">Windows installer in MSI format, as an alternative to the .exe.</span><span class="l-vi">Bộ cài Windows dạng MSI, thay cho file .exe.</span></td></tr>
+      <tr><td><code>ccmon_&lt;version&gt;_amd64.AppImage</code></td><td class="wrap-ok"><span class="l-en">Linux, any distribution: make it executable and run it.</span><span class="l-vi">Linux, mọi bản phân phối: cấp quyền chạy rồi mở.</span></td></tr>
+      <tr><td><code>ccmon_&lt;version&gt;_amd64.deb</code></td><td class="wrap-ok"><span class="l-en">Linux package for Debian, Ubuntu and derivatives.</span><span class="l-vi">Gói Linux cho Debian, Ubuntu và các bản dựa trên chúng.</span></td></tr>
+      <tr><td><code>ccmon-cli-windows-x64.exe</code><br /><code>ccmon-cli-linux-x64</code></td><td class="wrap-ok"><span class="l-en">The terminal UI (<code>ccmon</code>) as a single binary.</span><span class="l-vi">Giao diện terminal (<code>ccmon</code>) dạng một file chạy.</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="l-en">Windows</span><span class="l-vi">Windows</span></h3>
+  <div class="l-en"><ol>
+    <li>Download <code>ccmon_&lt;version&gt;_x64-setup.exe</code> (or the <code>.msi</code>) from the latest release.</li>
+    <li>Run it. The setup <code>.exe</code> installs for your user only; WebView2 is installed automatically if missing.</li>
+    <li>Open <b>ccmon</b> from the Start menu and confirm the first-run screen.</li>
+  </ol></div>
+  <div class="l-vi"><ol>
+    <li>Tải <code>ccmon_&lt;version&gt;_x64-setup.exe</code> (hoặc file <code>.msi</code>) ở bản phát hành mới nhất.</li>
+    <li>Chạy file. Bộ cài <code>.exe</code> cài cho riêng tài khoản của bạn; WebView2 tự cài nếu máy chưa có.</li>
+    <li>Mở <b>ccmon</b> từ Start menu rồi xác nhận màn hình chào.</li>
+  </ol></div>
+
+  <h3>Linux</h3>
+<pre><code><span class="c"># AppImage (any distribution)</span>
+chmod +x ccmon_*_amd64.AppImage &amp;&amp; ./ccmon_*_amd64.AppImage
+
+<span class="c"># or the .deb (Debian / Ubuntu)</span>
+sudo apt install ./ccmon_*_amd64.deb</code></pre>
+  <div class="l-en"><p>After installing the <code>.deb</code>, open <b>ccmon</b> from your applications menu.</p></div>
+  <div class="l-vi"><p>Sau khi cài <code>.deb</code>, mở <b>ccmon</b> từ menu ứng dụng.</p></div>
+
+  <h3><span class="l-en">Terminal UI</span><span class="l-vi">Giao diện terminal</span></h3>
+  <div class="l-en"><p>Download <code>ccmon-cli-linux-x64</code> or <code>ccmon-cli-windows-x64.exe</code>, rename it to <code>ccmon</code> (<code>ccmon.exe</code>) and put it on your <code>PATH</code>. The name matters only for <code>ccmon setup</code>, which writes the literal command <code>ccmon tee --</code> into your status line.</p></div>
+  <div class="l-vi"><p>Tải <code>ccmon-cli-linux-x64</code> hoặc <code>ccmon-cli-windows-x64.exe</code>, đổi tên thành <code>ccmon</code> (<code>ccmon.exe</code>) và đặt vào <code>PATH</code>. Tên file chỉ quan trọng với <code>ccmon setup</code>, vì lệnh này ghi đúng chuỗi <code>ccmon tee --</code> vào status line.</p></div>
+<pre><code>chmod +x ccmon-cli-linux-x64 &amp;&amp; mv ccmon-cli-linux-x64 ~/.local/bin/ccmon
+ccmon --help</code></pre>
+
+  <h3><span class="l-en">From source</span><span class="l-vi">Từ mã nguồn</span></h3>
+  <div class="l-en"><p>You need Rust (stable), Node.js 20+, Yarn 1.x and the <a href="https://tauri.app/start/prerequisites/">Tauri prerequisites</a> for your OS. The full developer setup is on the <a href="contributing.html#setup">Contributing</a> page.</p></div>
+  <div class="l-vi"><p>Cần Rust (stable), Node.js 20+, Yarn 1.x và <a href="https://tauri.app/start/prerequisites/">các yêu cầu của Tauri</a> cho hệ điều hành của bạn. Hướng dẫn đầy đủ cho lập trình viên ở trang <a href="contributing.html#setup">Đóng góp</a>.</p></div>
+<pre><code>git clone https://github.com/wik1ngst-1103/cc-monitor &amp;&amp; cd cc-monitor
+./gui/build.sh                       <span class="c"># desktop app → target/release/ccmon-gui</span>
+cargo run --release -p cc-monitor    <span class="c"># terminal UI</span></code></pre>
+
+  <h3><span class="l-en">Requirements</span><span class="l-vi">Yêu cầu</span></h3>
+  <div class="l-en"><ul>
+    <li><b>Claude Code</b>, used on the same machine, so that <code>~/.claude/projects</code> exists. ccmon was verified against Claude Code 2.1; the transcript format is internal to Claude Code and may change, so unknown lines are skipped rather than breaking the app.</li>
+    <li>To <b>run</b> sessions from ccmon (optional), the <code>claude</code> command must be found on your <code>PATH</code>, in <code>~/.local/bin</code> or in <code>~/.claude/local</code> (<code>claude.exe</code> / <code>claude.cmd</code> on Windows).</li>
+  </ul></div>
+  <div class="l-vi"><ul>
+    <li><b>Claude Code</b> được dùng trên cùng máy, để thư mục <code>~/.claude/projects</code> tồn tại. ccmon đã được kiểm tra với Claude Code 2.1; định dạng transcript là nội bộ của Claude Code và có thể đổi, nên dòng lạ sẽ được bỏ qua chứ không làm hỏng ứng dụng.</li>
+    <li>Để <b>chạy</b> session từ ccmon (không bắt buộc), lệnh <code>claude</code> phải nằm trong <code>PATH</code>, <code>~/.local/bin</code> hoặc <code>~/.claude/local</code> (<code>claude.exe</code> / <code>claude.cmd</code> trên Windows).</li>
+  </ul></div>
+</section>
+
+<section id="first-run" data-en="First run &amp; setup" data-vi="Lần chạy đầu &amp; thiết lập">
+  <h2><span class="l-en">First run &amp; setup</span><span class="l-vi">Lần chạy đầu &amp; thiết lập</span></h2>
+  <figure>
+    <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-setup.png" alt="ccmon first-run screen for Claude Code with the status-line option" loading="lazy" /></div>
+    <figcaption><span class="l-en">The first-run screen. The same screen opens later from ⚙ at the top of the session tree.</span><span class="l-vi">Màn hình chào. Màn hình này mở lại được bằng nút ⚙ ở đầu cây phiên.</span></figcaption>
+  </figure>
+  <div class="l-en">
+    <p>On first launch the desktop app shows a welcome screen (“Chào mừng đến với ccmon”). It checks whether <code>~/.claude/projects</code> exists and shows the Claude Code data folder with a <b>found</b> (“đã tìm thấy”) or <b>not found</b> (“chưa thấy”) chip. Press <b>Start</b> (“Bắt đầu”) and ccmon begins watching; nothing has to be installed into Claude Code.</p>
+    <h3 id="statusline">Plan usage through the status line (optional)</h3>
+    <p>Claude Code only gives the 5-hour and weekly limits and the context-window size to its <b>status line</b> command, not to the transcript. The setup screen therefore offers a checkbox (on by default) to wrap your current status line:</p>
+<pre><code><span class="c"># before</span>
+"statusLine": { "command": "&lt;your command&gt;" }
+<span class="c"># after</span>
+"statusLine": { "command": "&lt;path to ccmon-gui&gt; tee -- &lt;your command&gt;" }</code></pre>
+    <ul>
+      <li><code>tee</code> saves a copy of the status-line JSON for ccmon (one file per session in ccmon's cache folder, e.g. <code>~/.cache/ccmon/statusline/</code> on Linux), then runs your original command with the same input and prints its output, so your status line looks exactly the same.</li>
+      <li>Before writing, <code>~/.claude/settings.json</code> is copied to <code>settings.json.ccmon.bak</code>; other keys are preserved. If you had no status line, the command becomes just the wrapper.</li>
+      <li>To undo, open ⚙ and click <b>Remove</b> (“Gỡ”). The terminal UI offers the same through <code>ccmon setup</code> and <code>ccmon uninstall</code>.</li>
+      <li>Usage numbers appear once Claude Code has refreshed its status line for that session.</li>
+    </ul>
+    <div class="callout warn"><p>The wrapper points at the ccmon executable. <b>Remove it before uninstalling ccmon</b> (or moving the AppImage), otherwise Claude Code's status line command will fail.</p></div>
+  </div>
+  <div class="l-vi">
+    <p>Lần đầu mở, ứng dụng desktop hiện màn hình “Chào mừng đến với ccmon”. Nó kiểm tra thư mục <code>~/.claude/projects</code> và hiển thị đường dẫn dữ liệu Claude Code kèm nhãn “đã tìm thấy” hoặc “chưa thấy”. Bấm <b>Bắt đầu</b> là ccmon bắt đầu theo dõi; không phải cài gì vào Claude Code.</p>
+    <h3 id="statusline-vi">Hạn mức gói qua status line (tuỳ chọn)</h3>
+    <p>Claude Code chỉ đưa hạn mức 5 giờ, hạn mức tuần và kích thước cửa sổ context cho lệnh <b>status line</b>, không ghi vào transcript. Vì vậy màn hình thiết lập có một ô (bật sẵn) để bọc status line hiện tại:</p>
+<pre><code><span class="c"># trước</span>
+"statusLine": { "command": "&lt;lệnh của bạn&gt;" }
+<span class="c"># sau</span>
+"statusLine": { "command": "&lt;đường dẫn ccmon-gui&gt; tee -- &lt;lệnh của bạn&gt;" }</code></pre>
+    <ul>
+      <li><code>tee</code> lưu một bản JSON của status line cho ccmon (mỗi session một file trong thư mục cache của ccmon, ví dụ <code>~/.cache/ccmon/statusline/</code> trên Linux), rồi chạy lệnh gốc của bạn với cùng đầu vào và in ra kết quả của nó, nên status line trông y như cũ.</li>
+      <li>Trước khi ghi, <code>~/.claude/settings.json</code> được sao lưu thành <code>settings.json.ccmon.bak</code>; các khoá khác giữ nguyên. Nếu bạn chưa có status line, lệnh chỉ gồm lớp bọc.</li>
+      <li>Muốn gỡ, mở ⚙ và bấm <b>Gỡ</b>. Giao diện terminal làm điều tương tự bằng <code>ccmon setup</code> và <code>ccmon uninstall</code>.</li>
+      <li>Số liệu hạn mức xuất hiện sau khi Claude Code làm mới status line của session đó.</li>
+    </ul>
+    <div class="callout warn"><p>Lớp bọc trỏ tới file chạy của ccmon. <b>Hãy gỡ nó trước khi gỡ cài đặt ccmon</b> (hoặc di chuyển file AppImage), nếu không lệnh status line của Claude Code sẽ lỗi.</p></div>
+  </div>
+</section>
+
+<section id="ui" data-en="The main window" data-vi="Cửa sổ chính">
+  <h2><span class="l-en">The main window</span><span class="l-vi">Cửa sổ chính</span></h2>
+  <figure>
+    <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-main.png" alt="ccmon main window: session tree, timeline with a Yield card, composer and status bar" loading="lazy" /></div>
+    <figcaption><span class="l-en">Session tree on the left; header, timeline, activity line, composer and status bar on the right.</span><span class="l-vi">Cây phiên bên trái; header, timeline, dòng hoạt động, ô soạn và thanh trạng thái bên phải.</span></figcaption>
+  </figure>
+
+  <h3 id="tree"><span class="l-en">Session tree</span><span class="l-vi">Cây phiên</span></h3>
+  <div class="l-en"><ul>
+    <li><b>Open sessions</b> (“Đang mở · n”) come first, each with a live <code>working</code>/<code>waiting</code>-style status badge. Sub-agents and workflow agents are nested under the session that started them.</li>
+    <li>Below come recently closed sessions, then <b>history</b>: 30 days of past sessions grouped by project. Click a project to expand it and a session to open it.</li>
+    <li><b>+ Session mới…</b> starts a new Claude Code session from ccmon (see <a href="#composer">Composer</a>). ⚙ opens the setup screen.</li>
+    <li><kbd>Ctrl</kbd>+<kbd>B</kbd> collapses the tree to a narrow rail and back.</li>
+  </ul></div>
+  <div class="l-vi"><ul>
+    <li><b>Phiên đang mở</b> (“Đang mở · n”) nằm đầu tiên, mỗi phiên có nhãn trạng thái cập nhật trực tiếp. Subagent và agent của workflow nằm lồng dưới phiên đã tạo ra chúng.</li>
+    <li>Tiếp theo là các phiên vừa đóng, rồi <b>lịch sử</b>: 30 ngày phiên cũ nhóm theo dự án. Bấm vào dự án để mở rộng, bấm vào phiên để mở.</li>
+    <li><b>+ Session mới…</b> chạy một session Claude Code mới từ ccmon (xem <a href="#composer">Ô soạn</a>). ⚙ mở màn hình thiết lập.</li>
+    <li><kbd>Ctrl</kbd>+<kbd>B</kbd> thu gọn cây thành thanh hẹp và mở lại.</li>
+  </ul></div>
+
+  <h3 id="header"><span class="l-en">Header</span><span class="l-vi">Header</span></h3>
+  <div class="l-en"><p>One slim bar holds the page switch <b>Thread / Library / Agents</b> (<kbd>Ctrl</kbd>+<kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd>), the title and status of the selected thread, a <b>←</b> button to go back to the previous thread after you jumped into a sub-agent, and <b>↓ Mới nhất</b> (“latest”) when you have scrolled away from the bottom. On the right are two panel buttons: <b>assets</b> (images, files, log) and <b>Changes</b>.</p></div>
+  <div class="l-vi"><p>Một thanh mảnh chứa nút chuyển trang <b>Luồng / Thư viện / Agents</b> (<kbd>Ctrl</kbd>+<kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd>), tiêu đề và trạng thái của luồng đang chọn, nút <b>←</b> để quay lại luồng trước sau khi nhảy vào một subagent, và nút <b>↓ Mới nhất</b> khi bạn đã cuộn khỏi cuối. Bên phải là hai nút mở panel: <b>Quản lý</b> (ảnh, file, log) và <b>Thay đổi</b>.</p></div>
+
+  <h3 id="thread"><span class="l-en">Thread view (timeline)</span><span class="l-vi">Luồng (timeline)</span></h3>
+  <div class="l-en"><ul>
+    <li>Your prompts and the agent's answers, rendered as Markdown (code blocks with line numbers and a copy button).</li>
+    <li>Every tool call is a card: <b>Bash</b> with its description and output, <b>Edit</b> as a diff, <b>Read</b>, <b>Grep</b>, <b>Write</b>, todo lists. Expand a card for the full input and result.</li>
+    <li>An <b>Agent</b> card links to the sub-agent's own thread: open it to see the brief it received and the report it sent back.</li>
+    <li>A <b>Yield</b> card lists what the agent is waiting on — shells, monitors, sub-agents, workflows — with live state and which task woke it. Background Bash and Monitor tasks show status and a live tail of their output.</li>
+    <li>The timeline follows new items while you are at the bottom. Long threads load the newest items first; a button at the top loads older ones.</li>
+    <li>Under the timeline, an <b>activity line</b> says what is happening now — which tool is running, waiting on an agent, thinking, replying or waiting for you — with the elapsed time.</li>
+  </ul>
+  <p>The model's full reasoning is not shown: Claude Code stores it encrypted or leaves it out of the transcript. ccmon shows what is saved — short progress notes and thinking time.</p></div>
+  <div class="l-vi"><ul>
+    <li>Prompt của bạn và câu trả lời của agent, render dạng Markdown (khối code có số dòng và nút sao chép).</li>
+    <li>Mỗi lần gọi tool là một thẻ: <b>Bash</b> có mô tả và output, <b>Edit</b> hiện diff, <b>Read</b>, <b>Grep</b>, <b>Write</b>, danh sách việc. Mở rộng thẻ để xem đầy đủ đầu vào và kết quả.</li>
+    <li>Thẻ <b>Agent</b> dẫn tới luồng riêng của subagent: mở ra để xem việc được giao và báo cáo gửi về.</li>
+    <li>Thẻ <b>Yield</b> liệt kê agent đang chờ gì — shell, monitor, subagent, workflow — với trạng thái trực tiếp và tác vụ nào đã đánh thức nó. Bash và Monitor chạy nền hiện trạng thái và phần cuối output trực tiếp.</li>
+    <li>Timeline tự theo mục mới khi bạn ở cuối. Luồng dài nạp mục mới nhất trước; nút ở đầu nạp thêm mục cũ.</li>
+    <li>Dưới timeline, <b>dòng hoạt động</b> cho biết đang xảy ra gì — đang chạy tool nào, chờ agent con, suy nghĩ, trả lời hay chờ bạn — kèm thời gian đã trôi.</li>
+  </ul>
+  <p>Không xem được toàn bộ phần suy luận của model: Claude Code lưu nó ở dạng mã hoá hoặc không ghi vào transcript. ccmon hiện những gì có: ghi chú tiến độ ngắn và thời gian suy nghĩ.</p></div>
+
+  <h3 id="status"><span class="l-en">Status bar</span><span class="l-vi">Thanh trạng thái</span></h3>
+  <div class="l-en"><p>Model, context used, the 5-hour and weekly limits, effort, git branch, lines changed and memory. The limits and the exact context-window size need the <a href="#first-run">status-line wrapper</a>; without it the context window is estimated.</p></div>
+  <div class="l-vi"><p>Model, context đã dùng, hạn mức 5 giờ và tuần, effort, nhánh git, số dòng thay đổi và bộ nhớ. Hạn mức và kích thước cửa sổ context chính xác cần <a href="#first-run">lớp bọc status line</a>; không có nó thì cửa sổ context là ước lượng.</p></div>
+
+  <h3 id="assets"><span class="l-en">Assets panel: images, files, log</span><span class="l-vi">Panel Quản lý: ảnh, file, log</span></h3>
+  <div class="l-en"><p>Images you pasted, screenshots the agent took, files it read or wrote, scratchpad output and a ✓/✗ command log for the selected thread, grouped in tabs (“Người dùng”, “Ảnh”, “File”, “Log”). Click an entry for an image or text preview; Markdown files are rendered. <kbd>Esc</kbd> closes the panel.</p></div>
+  <div class="l-vi"><p>Ảnh bạn dán, ảnh chụp agent tạo, file đã đọc/ghi, output thư mục nháp và log lệnh ✓/✗ của luồng đang chọn, chia theo tab (“Người dùng”, “Ảnh”, “File”, “Log”). Bấm vào một mục để xem trước ảnh hoặc văn bản; file Markdown được render. <kbd>Esc</kbd> đóng panel.</p></div>
+
+  <h3 id="changes"><span class="l-en">Changes and side-by-side diff</span><span class="l-vi">Thay đổi và diff hai cột</span></h3>
+  <figure>
+    <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-diff.png" alt="Side-by-side diff of a file changed in the session" loading="lazy" /></div>
+  </figure>
+  <div class="l-en"><p><b>Changes</b> (“Thay đổi”) lists every file the session changed. Select one to compare it in two aligned columns, with unchanged regions folded and syntax highlighting. Two baselines are available:</p>
+  <ul>
+    <li><b>Before the session</b> — the file as it was before the session first changed it, taken from Claude Code's own file backups (<code>~/.claude/file-history/</code>). Works without git; files created in the session show as new.</li>
+    <li><b>git HEAD</b> — <code>git show HEAD:&lt;path&gt;</code>, when the file is inside a git work tree.</li>
+  </ul></div>
+  <div class="l-vi"><p><b>Thay đổi</b> liệt kê mọi file phiên đã sửa. Chọn một file để so sánh hai cột thẳng hàng, gấp đoạn không đổi và tô màu cú pháp. Có hai bản gốc để so:</p>
+  <ul>
+    <li><b>Trước phiên</b> — file như trước khi phiên sửa lần đầu, lấy từ bản sao lưu file của chính Claude Code (<code>~/.claude/file-history/</code>). Không cần git; file được tạo trong phiên hiện là file mới.</li>
+    <li><b>git HEAD</b> — <code>git show HEAD:&lt;path&gt;</code>, khi file nằm trong một git work tree.</li>
+  </ul></div>
+</section>
+
+<section id="library" data-en="Library" data-vi="Thư viện">
+  <h2><span class="l-en">Library</span><span class="l-vi">Thư viện</span></h2>
+  <figure>
+    <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-library.png" alt="Library page: skills with scope, global state, per-session usage and switches" loading="lazy" /></div>
+  </figure>
+  <div class="l-en">
+    <p><kbd>Ctrl</kbd>+<kbd>2</kbd> opens the Library: <b>skills</b>, <b>plugins</b> and <b>MCP servers</b>, found on disk (<code>~/.claude</code>, the project's <code>.claude/</code>, <code>~/.claude.json</code>, <code>.mcp.json</code>, installed plugins) or announced by the selected session. For each item you see its scope (user, project, plugin, built-in, managed), whether it is enabled in your Claude Code configuration, and — for the selected session — <b>used ×n</b> or <b>available</b>.</p>
+    <p>The switch on each row turns the item off <b>for that session only</b>, from its next turn. It applies to sessions run from ccmon, through launch flags; your <code>settings.json</code>, skill, plugin and MCP files are never edited. Items disabled in Claude Code's own configuration show as locked.</p>
+  </div>
+  <div class="l-vi">
+    <p><kbd>Ctrl</kbd>+<kbd>2</kbd> mở Thư viện: <b>skill</b>, <b>plugin</b> và <b>MCP server</b> có trên đĩa (<code>~/.claude</code>, <code>.claude/</code> của dự án, <code>~/.claude.json</code>, <code>.mcp.json</code>, plugin đã cài) hoặc được session đang chọn công bố. Mỗi mục hiện phạm vi (người dùng, dự án, plugin, có sẵn, được quản lý), trạng thái bật trong cấu hình Claude Code, và — với session đang chọn — <b>đã dùng ×n</b> hay <b>khả dụng</b>.</p>
+    <p>Công tắc ở mỗi dòng tắt mục đó <b>cho riêng session ấy</b>, từ lượt kế tiếp. Nó áp dụng cho session chạy từ ccmon, qua cờ khởi chạy; <code>settings.json</code>, file skill, plugin và MCP không bao giờ bị sửa. Mục bị tắt trong cấu hình của Claude Code hiện ở trạng thái khoá.</p>
+  </div>
+</section>
+
+<section id="agents" data-en="Agents &amp; workflows" data-vi="Agents &amp; workflow">
+  <h2><span class="l-en">Agents &amp; workflows</span><span class="l-vi">Agents &amp; workflow</span></h2>
+  <figure>
+    <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-agents.png" alt="Agents page: agent list by source, details with tools and model, prompt and run history" loading="lazy" /></div>
+  </figure>
+  <div class="l-en">
+    <p><kbd>Ctrl</kbd>+<kbd>3</kbd> opens Agents: built-in, plugin, user and project <b>agents</b> and <b>workflows</b> in one list, with their tools, model, prompt and <b>run history</b>. Click a past run to open its thread.</p>
+    <ul>
+      <li><b>Create or edit</b> your own agents. ccmon writes the agent file to <code>~/.claude/agents</code> (user) or the project's <code>.claude/agents</code>, only after you confirm, and never overwrites a file without asking. Other frontmatter in the file is preserved.</li>
+      <li><b>Enabled in ccmon</b> (“Bật trong ccmon”): switching it off blocks that agent or workflow in every session run from ccmon. The file and its history stay; the choice is stored in ccmon's own <code>registry.json</code>.</li>
+    </ul>
+  </div>
+  <div class="l-vi">
+    <p><kbd>Ctrl</kbd>+<kbd>3</kbd> mở Agents: <b>agent</b> và <b>workflow</b> có sẵn, của plugin, người dùng và dự án trong một danh sách, kèm tool, model, prompt và <b>lịch sử chạy</b>. Bấm vào một lượt chạy cũ để mở luồng của nó.</p>
+    <ul>
+      <li><b>Tạo hoặc sửa</b> agent của bạn. ccmon ghi file agent vào <code>~/.claude/agents</code> (người dùng) hoặc <code>.claude/agents</code> của dự án, chỉ sau khi bạn xác nhận, và không ghi đè file nếu chưa hỏi. Phần frontmatter khác trong file được giữ nguyên.</li>
+      <li><b>Bật trong ccmon</b>: tắt đi thì agent hoặc workflow đó bị chặn trong mọi session chạy từ ccmon. File và lịch sử vẫn còn; lựa chọn được lưu trong <code>registry.json</code> của ccmon.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="composer" data-en="Composer: run sessions" data-vi="Ô soạn: chạy session">
+  <h2><span class="l-en">Composer: run sessions</span><span class="l-vi">Ô soạn: chạy session</span></h2>
+  <figure>
+    <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-composer.png" alt="Composer with an @Explore mention, model, effort, permission and agent chips, and the per-session capability drawer" loading="lazy" /></div>
+  </figure>
+  <div class="l-en">
+    <p>The composer under the timeline sends prompts to Claude Code for you. ccmon starts the <code>claude</code> you already have as</p>
+<pre><code>claude -p --verbose --input-format stream-json --output-format stream-json [--resume &lt;session&gt;] [flags]</code></pre>
+    <p>The conversation is still read back from the transcript, so everything else in ccmon works as for terminal sessions.</p>
+    <ul>
+      <li><b>Continue or start.</b> Type in the composer of an existing session, or click <b>+ Session mới…</b> in the tree and pick a project folder. <kbd>Enter</kbd> sends, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line, <b>Dừng</b> (“stop”) interrupts the running turn.</li>
+      <li><b>Chips</b> for model, effort, permission mode and main agent. They apply from the next turn; ccmon restarts the process between turns when they change, and a “from next turn” chip shows while that is pending.</li>
+      <li><b>Capabilities per session.</b> ⚙ in the composer opens a drawer with tabs for Skills, Plugins, MCP, Agents and Workflows — the same per-session switches as the Library. They become <code>--disallowedTools</code> rules and a <code>--settings</code> file; your <code>settings.json</code> is never changed.</li>
+      <li><b>@agent mentions.</b> Type <code>@</code> to pick an agent (<kbd>↑</kbd>/<kbd>↓</kbd>, <kbd>Enter</kbd> or <kbd>Tab</kbd>, <kbd>Esc</kbd> to close). Mentions are highlighted and listed under the prompt.</li>
+    </ul>
+    <h3 id="limits">Limits, honestly</h3>
+    <ul>
+      <li><b>No approval dialog.</b> In <code>-p</code> mode Claude Code cannot ask you to approve a tool, so tools that need approval are denied. Pick a more permissive mode if the task needs them: <code>acceptEdits</code>, <code>plan</code>, or <code>bypassPermissions</code> — which skips every permission check, so use it with care.</li>
+      <li><b>Terminal sessions stay view-only.</b> A session that is open in a terminal is never taken over; its composer is locked (“Session đang chạy ở terminal — chỉ xem”).</li>
+      <li><b>Disabled ≠ hidden.</b> Disabled skills and agents are blocked when called, but Claude Code still lists them to the model.</li>
+      <li>If <code>claude</code> cannot be found, the composer is locked with “Không tìm thấy lệnh claude”.</li>
+    </ul>
+  </div>
+  <div class="l-vi">
+    <p>Ô soạn dưới timeline gửi prompt tới Claude Code giúp bạn. ccmon khởi chạy chính lệnh <code>claude</code> trên máy bạn dưới dạng</p>
+<pre><code>claude -p --verbose --input-format stream-json --output-format stream-json [--resume &lt;session&gt;] [cờ]</code></pre>
+    <p>Cuộc hội thoại vẫn được đọc lại từ transcript, nên mọi phần khác của ccmon hoạt động như với session ở terminal.</p>
+    <ul>
+      <li><b>Tiếp tục hoặc mở mới.</b> Gõ vào ô soạn của một session có sẵn, hoặc bấm <b>+ Session mới…</b> trên cây và chọn thư mục dự án. <kbd>Enter</kbd> gửi, <kbd>Shift</kbd>+<kbd>Enter</kbd> xuống dòng, <b>Dừng</b> ngắt lượt đang chạy.</li>
+      <li><b>Chip</b> cho model, effort, chế độ quyền và agent chính. Chúng áp dụng từ lượt sau; ccmon khởi động lại tiến trình giữa hai lượt khi có thay đổi, và một chip “từ lượt sau” hiện trong lúc chờ.</li>
+      <li><b>Capability theo session.</b> Nút ⚙ trong ô soạn mở ngăn có các tab Skills, Plugins, MCP, Agents và Workflows — cùng công tắc theo session như Thư viện. Chúng thành luật <code>--disallowedTools</code> và một file <code>--settings</code>; <code>settings.json</code> của bạn không bao giờ bị sửa.</li>
+      <li><b>Nhắc @agent.</b> Gõ <code>@</code> để chọn agent (<kbd>↑</kbd>/<kbd>↓</kbd>, <kbd>Enter</kbd> hoặc <kbd>Tab</kbd>, <kbd>Esc</kbd> để đóng). Agent được nhắc sẽ được tô sáng và liệt kê dưới prompt.</li>
+    </ul>
+    <h3 id="limits-vi">Giới hạn, nói thẳng</h3>
+    <ul>
+      <li><b>Không có hộp thoại duyệt.</b> Ở chế độ <code>-p</code>, Claude Code không thể hỏi bạn duyệt tool, nên tool cần duyệt sẽ bị từ chối. Nếu việc cần chúng, hãy chọn chế độ thoáng hơn: <code>acceptEdits</code>, <code>plan</code>, hoặc <code>bypassPermissions</code> — bỏ qua mọi kiểm tra quyền, hãy cẩn thận.</li>
+      <li><b>Session ở terminal chỉ xem.</b> Session đang mở ở terminal không bao giờ bị tiếp quản; ô soạn bị khoá (“Session đang chạy ở terminal — chỉ xem”).</li>
+      <li><b>Tắt ≠ ẩn.</b> Skill và agent bị tắt sẽ bị chặn khi gọi, nhưng Claude Code vẫn liệt kê chúng cho model.</li>
+      <li>Nếu không tìm thấy <code>claude</code>, ô soạn bị khoá với thông báo “Không tìm thấy lệnh claude”.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="shortcuts" data-en="Keyboard shortcuts" data-vi="Phím tắt">
+  <h2><span class="l-en">Keyboard shortcuts (desktop)</span><span class="l-vi">Phím tắt (desktop)</span></h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th><span class="l-en">Keys</span><span class="l-vi">Phím</span></th><th><span class="l-en">Action</span><span class="l-vi">Tác dụng</span></th></tr></thead>
+    <tbody>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></td><td><span class="l-en">Thread / Library / Agents</span><span class="l-vi">Luồng / Thư viện / Agents</span></td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd></td><td><span class="l-en">Collapse or expand the session tree</span><span class="l-vi">Thu gọn hoặc mở cây phiên</span></td></tr>
+      <tr><td><kbd>Enter</kbd> / <kbd>Shift</kbd>+<kbd>Enter</kbd></td><td><span class="l-en">Send prompt / new line (composer)</span><span class="l-vi">Gửi prompt / xuống dòng (ô soạn)</span></td></tr>
+      <tr><td><kbd>@</kbd></td><td><span class="l-en">Mention an agent (composer)</span><span class="l-vi">Nhắc một agent (ô soạn)</span></td></tr>
+      <tr><td><kbd>Esc</kbd></td><td><span class="l-en">Close a panel, dialog or the mention list</span><span class="l-vi">Đóng panel, hộp thoại hoặc danh sách nhắc</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="l-en"><p>On macOS-style keyboards <kbd>⌘</kbd> works in place of <kbd>Ctrl</kbd>.</p></div>
+  <div class="l-vi"><p>Trên bàn phím kiểu macOS, <kbd>⌘</kbd> dùng thay cho <kbd>Ctrl</kbd>.</p></div>
+</section>
+
+<section id="tui" data-en="Terminal UI" data-vi="Giao diện terminal">
+  <h2><span class="l-en">Terminal UI</span><span class="l-vi">Giao diện terminal</span></h2>
+  <div class="l-en"><p><code>ccmon</code> is a read-only monitor in the terminal: a session tree on the left and the timeline of the selected thread on the right, with a status bar for model, context and limits. It cannot run sessions or change capabilities.</p></div>
+  <div class="l-vi"><p><code>ccmon</code> là bảng theo dõi chỉ đọc trong terminal: cây phiên bên trái và timeline của luồng đang chọn bên phải, kèm thanh trạng thái cho model, context và hạn mức. Nó không chạy session và không đổi capability.</p></div>
+<pre><code>ccmon                         <span class="c"># sessions active in the last 30 minutes</span>
+ccmon --all                   <span class="c"># also sessions active in the last 24 hours</span>
+ccmon --session 3f2a          <span class="c"># only sessions whose id starts with 3f2a</span>
+ccmon setup [-y]              <span class="c"># wrap statusLine in ~/.claude/settings.json with `ccmon tee --` (asks first; -y skips)</span>
+ccmon uninstall               <span class="c"># remove the `ccmon tee --` wrapper</span>
+ccmon tee -- &lt;command&gt;        <span class="c"># used inside statusLine: snapshot the JSON, then run &lt;command&gt;</span>
+ccmon --version | --help</code></pre>
+  <div class="table-wrap"><table>
+    <thead><tr><th><span class="l-en">Keys</span><span class="l-vi">Phím</span></th><th><span class="l-en">Action</span><span class="l-vi">Tác dụng</span></th></tr></thead>
+    <tbody>
+      <tr><td><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></td><td><span class="l-en">Switch between tree and timeline (shows the tree if hidden)</span><span class="l-vi">Chuyển giữa cây và timeline (hiện cây nếu đang ẩn)</span></td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> · <kbd>k</kbd> <kbd>j</kbd></td><td><span class="l-en">Move the selection</span><span class="l-vi">Di chuyển lựa chọn</span></td></tr>
+      <tr><td><kbd>PgUp</kbd> <kbd>PgDn</kbd></td><td><span class="l-en">Move one page</span><span class="l-vi">Di chuyển một trang</span></td></tr>
+      <tr><td><kbd>g</kbd> / <kbd>Home</kbd> · <kbd>G</kbd> / <kbd>End</kbd></td><td><span class="l-en">First / last item</span><span class="l-vi">Mục đầu / cuối</span></td></tr>
+      <tr><td><kbd>←</kbd> <kbd>h</kbd> · <kbd>→</kbd> <kbd>l</kbd></td><td><span class="l-en">Focus tree / timeline</span><span class="l-vi">Chọn cây / timeline</span></td></tr>
+      <tr><td><kbd>Enter</kbd></td><td><span class="l-en">Tree: go to the timeline. Timeline: open the item (e.g. jump into a sub-agent's thread)</span><span class="l-vi">Trên cây: sang timeline. Trên timeline: mở mục (ví dụ nhảy vào luồng của subagent)</span></td></tr>
+      <tr><td><kbd>Space</kbd></td><td><span class="l-en">Expand or collapse the item under the cursor</span><span class="l-vi">Mở rộng hoặc thu gọn mục dưới con trỏ</span></td></tr>
+      <tr><td><kbd>Esc</kbd></td><td><span class="l-en">Back to the previous thread</span><span class="l-vi">Quay lại luồng trước</span></td></tr>
+      <tr><td><kbd>f</kbd></td><td><span class="l-en">Toggle follow (stick to the newest item)</span><span class="l-vi">Bật/tắt follow (bám mục mới nhất)</span></td></tr>
+      <tr><td><kbd>t</kbd></td><td><span class="l-en">Show or hide the tree</span><span class="l-vi">Ẩn/hiện cây</span></td></tr>
+      <tr><td><kbd>q</kbd> · <kbd>Ctrl</kbd>+<kbd>C</kbd></td><td><span class="l-en">Quit</span><span class="l-vi">Thoát</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="l-en"><p>The mouse wheel scrolls the pane under the pointer. Set <code>NO_POWERLINE=1</code> for a plain status bar if your terminal font has no Powerline glyphs.</p></div>
+  <div class="l-vi"><p>Con lăn chuột cuộn pane dưới con trỏ. Đặt <code>NO_POWERLINE=1</code> để dùng thanh trạng thái đơn giản nếu font terminal không có ký tự Powerline.</p></div>
+</section>
+
+<section id="config" data-en="Configuration &amp; files" data-vi="Cấu hình &amp; file">
+  <h2><span class="l-en">Configuration &amp; files</span><span class="l-vi">Cấu hình &amp; file</span></h2>
+  <div class="l-en"><p>There is no settings file to edit by hand; everything is set from the app. For reference, this is where ccmon keeps its state (config folder: <code>~/.config/ccmon/</code> on Linux, <code>%APPDATA%\ccmon\</code> on Windows):</p></div>
+  <div class="l-vi"><p>Không có file cài đặt nào phải sửa tay; mọi thứ được chỉnh trong ứng dụng. Để tham khảo, đây là nơi ccmon lưu trạng thái (thư mục cấu hình: <code>~/.config/ccmon/</code> trên Linux, <code>%APPDATA%\ccmon\</code> trên Windows):</p></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th><span class="l-en">Path</span><span class="l-vi">Đường dẫn</span></th><th><span class="l-en">Contents</span><span class="l-vi">Nội dung</span></th></tr></thead>
+    <tbody>
+      <tr><td><code>config.json</code></td><td class="wrap-ok"><span class="l-en">First-run done, which tools to monitor (<code>setupDone</code>, <code>claude</code>, <code>codex</code>; Codex monitoring is currently switched off in the code).</span><span class="l-vi">Đã qua màn hình chào chưa, theo dõi công cụ nào (<code>setupDone</code>, <code>claude</code>, <code>codex</code>; theo dõi Codex hiện đang tắt trong code).</span></td></tr>
+      <tr><td><code>overlays/&lt;session&gt;.json</code></td><td class="wrap-ok"><span class="l-en">Per-session choices: model, effort, permission mode, main agent, disabled capabilities.</span><span class="l-vi">Lựa chọn theo session: model, effort, chế độ quyền, agent chính, capability bị tắt.</span></td></tr>
+      <tr><td><code>defaults.json</code></td><td class="wrap-ok"><span class="l-en">The same choices for new sessions.</span><span class="l-vi">Các lựa chọn đó cho session mới.</span></td></tr>
+      <tr><td><code>registry.json</code></td><td class="wrap-ok"><span class="l-en">Agents and workflows switched off in ccmon.</span><span class="l-vi">Agent và workflow bị tắt trong ccmon.</span></td></tr>
+      <tr><td><code>launch/*.settings.json</code></td><td class="wrap-ok"><span class="l-en">Generated <code>--settings</code> files for sessions run from ccmon.</span><span class="l-vi">File <code>--settings</code> sinh ra cho session chạy từ ccmon.</span></td></tr>
+      <tr><td><span class="l-en">cache</span><span class="l-vi">cache</span> <code>…/ccmon/statusline/</code></td><td class="wrap-ok"><span class="l-en">Status-line snapshots written by <code>tee</code> (in the OS cache folder, e.g. <code>~/.cache</code>).</span><span class="l-vi">Bản chụp status line do <code>tee</code> ghi (trong thư mục cache của hệ điều hành, ví dụ <code>~/.cache</code>).</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="env"><span class="l-en">Environment variables and launch options</span><span class="l-vi">Biến môi trường và tuỳ chọn khởi chạy</span></h3>
+  <div class="table-wrap"><table>
+    <thead><tr><th><span class="l-en">Name</span><span class="l-vi">Tên</span></th><th><span class="l-en">Effect</span><span class="l-vi">Tác dụng</span></th></tr></thead>
+    <tbody>
+      <tr><td><code>CCMON_CLAUDE_DIR</code></td><td class="wrap-ok"><span class="l-en">Use another Claude Code data folder instead of <code>~/.claude</code>.</span><span class="l-vi">Dùng thư mục dữ liệu Claude Code khác thay cho <code>~/.claude</code>.</span></td></tr>
+      <tr><td><code>CCMON_CONFIG</code></td><td class="wrap-ok"><span class="l-en">Path of <code>config.json</code>; ccmon's other state files live next to it.</span><span class="l-vi">Đường dẫn <code>config.json</code>; các file trạng thái khác của ccmon nằm cạnh nó.</span></td></tr>
+      <tr><td><code>CCMON_CACHE_DIR</code></td><td class="wrap-ok"><span class="l-en">Base folder for status-line snapshots.</span><span class="l-vi">Thư mục gốc cho bản chụp status line.</span></td></tr>
+      <tr><td><code>CCMON_SELECT</code>, <code>--select &lt;key&gt;</code></td><td class="wrap-ok"><span class="l-en">Desktop app: thread to open at startup, e.g. <code>m:&lt;session id&gt;</code>.</span><span class="l-vi">Ứng dụng desktop: luồng mở khi khởi động, ví dụ <code>m:&lt;session id&gt;</code>.</span></td></tr>
+      <tr><td><code>--diff &lt;path&gt;</code>, <code>--view &lt;path&gt;</code></td><td class="wrap-ok"><span class="l-en">Desktop app: open the Changes panel on that file's diff, or the file viewer.</span><span class="l-vi">Ứng dụng desktop: mở panel Thay đổi ở diff của file đó, hoặc trình xem file.</span></td></tr>
+      <tr><td><code>NO_POWERLINE</code></td><td class="wrap-ok"><span class="l-en">Terminal UI: plain status bar.</span><span class="l-vi">Giao diện terminal: thanh trạng thái đơn giản.</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="l-en"><p>The first three are mainly for tests and demos: <code>python3 demo/make_demo.py /tmp/ccmon-demo</code> (in the source tree) generates a fake dataset and prints them as JSON, so you can try ccmon without your own sessions.</p></div>
+  <div class="l-vi"><p>Ba biến đầu chủ yếu dành cho kiểm thử và demo: <code>python3 demo/make_demo.py /tmp/ccmon-demo</code> (trong mã nguồn) tạo bộ dữ liệu giả và in chúng ra dạng JSON, để bạn thử ccmon mà không cần session thật.</p></div>
+</section>
+
+<section id="troubleshooting" class="faq" data-en="Troubleshooting &amp; FAQ" data-vi="Xử lý sự cố &amp; FAQ">
+  <h2><span class="l-en">Troubleshooting &amp; FAQ</span><span class="l-vi">Xử lý sự cố &amp; câu hỏi</span></h2>
+  <div class="l-en">
+    <details><summary>No sessions show up</summary><p>Open ⚙ and check that the Claude Code folder is marked <b>found</b>. ccmon looks for <code>~/.claude/projects</code>; if your data lives elsewhere, start ccmon with <code>CCMON_CLAUDE_DIR</code> pointing at it. A brand-new session appears once Claude Code has written its first transcript line. In the terminal UI, use <code>--all</code> to include sessions idle for more than 30 minutes.</p></details>
+    <details><summary>The status bar has no 5-hour / weekly limits</summary><p>Those numbers only reach ccmon through the <a href="#first-run">status-line wrapper</a>. Enable it in ⚙, then let Claude Code refresh its status line in that session.</p></details>
+    <details><summary>The composer is locked: “Session đang chạy ở terminal — chỉ xem”</summary><p>By design. The session is open in a terminal and ccmon never takes it over. Continue it there, or close it in the terminal and continue from ccmon.</p></details>
+    <details><summary>“Không tìm thấy lệnh claude” (claude not found)</summary><p>ccmon looks for <code>claude</code> on <code>PATH</code>, in <code>~/.local/bin</code> and in <code>~/.claude/local</code>. Install Claude Code or add its folder to <code>PATH</code>, then restart ccmon. Desktop launchers may use a different <code>PATH</code> from your shell.</p></details>
+    <details><summary>A session run from ccmon says a tool was denied</summary><p>Sessions run from ccmon use <code>claude -p</code>, which has no approval dialog. Choose <code>acceptEdits</code>, <code>plan</code> or <code>bypassPermissions</code> in the permission chip; it applies from the next turn.</p></details>
+    <details><summary>I disabled a skill but the model still mentions it</summary><p>Expected: Claude Code still lists disabled skills and agents to the model, but calls to them are blocked. Plugins and MCP servers that are switched off are removed from the session's tool list.</p></details>
+    <details><summary>The window is blank on Linux</summary><p>This is usually WebKitGTK failing to use the GPU. Starting ccmon with <code>WEBKIT_DISABLE_DMABUF_RENDERER=1</code> (the project's CI uses it for its headless smoke test) often helps.</p></details>
+    <details><summary>How do I uninstall cleanly?</summary><p>First remove the status-line wrapper (⚙ → <b>Remove</b>, or <code>ccmon uninstall</code>), then uninstall the app as usual. Delete the config folder (<code>~/.config/ccmon/</code> or <code>%APPDATA%\ccmon\</code>) and <code>…/ccmon/statusline/</code> in your cache folder to remove ccmon's state. Agent files you created stay in <code>.claude/agents</code>.</p></details>
+    <details><summary>Does ccmon send my code or prompts anywhere?</summary><p>No. ccmon makes no network requests of its own and has no telemetry. Sessions you run from ccmon are ordinary Claude Code sessions using your own <code>claude</code>. Details on the <a href="privacy.html">Privacy</a> page.</p></details>
+    <details><summary>Is ccmon made by Anthropic?</summary><p>No. ccmon is an independent community project, not affiliated with or endorsed by Anthropic. Claude Code is a product and trademark of Anthropic.</p></details>
+    <details><summary>Something else is wrong</summary><p>Open an <a href="https://github.com/wik1ngst-1103/cc-monitor/issues/new/choose">issue</a> with your OS, ccmon version and <code>claude --version</code>. Please remove private code and prompts from screenshots and logs.</p></details>
+  </div>
+  <div class="l-vi">
+    <details><summary>Không thấy phiên nào</summary><p>Mở ⚙ và kiểm tra thư mục Claude Code có nhãn <b>đã tìm thấy</b>. ccmon tìm <code>~/.claude/projects</code>; nếu dữ liệu nằm chỗ khác, chạy ccmon với <code>CCMON_CLAUDE_DIR</code> trỏ tới đó. Session mới xuất hiện khi Claude Code đã ghi dòng transcript đầu tiên. Ở giao diện terminal, dùng <code>--all</code> để thấy cả phiên đã nghỉ hơn 30 phút.</p></details>
+    <details><summary>Thanh trạng thái không có hạn mức 5 giờ / tuần</summary><p>Các số này chỉ tới được ccmon qua <a href="#first-run">lớp bọc status line</a>. Bật nó trong ⚙, rồi chờ Claude Code làm mới status line trong session đó.</p></details>
+    <details><summary>Ô soạn bị khoá: “Session đang chạy ở terminal — chỉ xem”</summary><p>Đúng thiết kế. Session đang mở ở terminal và ccmon không bao giờ tiếp quản. Hãy tiếp tục ở terminal, hoặc đóng nó ở terminal rồi tiếp tục từ ccmon.</p></details>
+    <details><summary>“Không tìm thấy lệnh claude”</summary><p>ccmon tìm <code>claude</code> trong <code>PATH</code>, <code>~/.local/bin</code> và <code>~/.claude/local</code>. Cài Claude Code hoặc thêm thư mục của nó vào <code>PATH</code>, rồi mở lại ccmon. Trình khởi chạy của desktop có thể dùng <code>PATH</code> khác với shell của bạn.</p></details>
+    <details><summary>Session chạy từ ccmon báo tool bị từ chối</summary><p>Session chạy từ ccmon dùng <code>claude -p</code>, không có hộp thoại duyệt. Chọn <code>acceptEdits</code>, <code>plan</code> hoặc <code>bypassPermissions</code> ở chip quyền; áp dụng từ lượt sau.</p></details>
+    <details><summary>Đã tắt một skill mà model vẫn nhắc tới</summary><p>Bình thường: Claude Code vẫn liệt kê skill và agent bị tắt cho model, nhưng lời gọi tới chúng bị chặn. Plugin và MCP server bị tắt thì bị gỡ khỏi danh sách tool của session.</p></details>
+    <details><summary>Cửa sổ trắng trơn trên Linux</summary><p>Thường do WebKitGTK không dùng được GPU. Chạy ccmon với <code>WEBKIT_DISABLE_DMABUF_RENDERER=1</code> (CI của dự án dùng biến này cho bài kiểm thử không màn hình) thường giúp được.</p></details>
+    <details><summary>Gỡ cài đặt sạch sẽ thế nào?</summary><p>Trước tiên gỡ lớp bọc status line (⚙ → <b>Gỡ</b>, hoặc <code>ccmon uninstall</code>), rồi gỡ ứng dụng như bình thường. Xoá thư mục cấu hình (<code>~/.config/ccmon/</code> hoặc <code>%APPDATA%\ccmon\</code>) và <code>…/ccmon/statusline/</code> trong thư mục cache để xoá trạng thái của ccmon. File agent bạn đã tạo vẫn nằm trong <code>.claude/agents</code>.</p></details>
+    <details><summary>ccmon có gửi code hay prompt của tôi đi đâu không?</summary><p>Không. ccmon không tự gọi mạng và không có telemetry. Session bạn chạy từ ccmon là session Claude Code bình thường, dùng chính lệnh <code>claude</code> của bạn. Chi tiết ở trang <a href="privacy.html">Quyền riêng tư</a>.</p></details>
+    <details><summary>ccmon có phải của Anthropic không?</summary><p>Không. ccmon là dự án cộng đồng độc lập, không liên kết và không được Anthropic bảo trợ. Claude Code là sản phẩm và thương hiệu của Anthropic.</p></details>
+    <details><summary>Lỗi khác</summary><p>Mở một <a href="https://github.com/wik1ngst-1103/cc-monitor/issues/new/choose">issue</a> kèm hệ điều hành, phiên bản ccmon và kết quả <code>claude --version</code>. Vui lòng xoá code và prompt riêng tư khỏi ảnh chụp và log.</p></details>
+  </div>
+</section>
+    </main>
+  </div>
+
+  <footer>
+    <div class="wrap">
+      <div>© 2026 Lê Thanh Sơn · <a href="license.html"><span class="l-en">MIT License</span><span class="l-vi">Giấy phép MIT</span></a></div>
+      <div><span class="l-en">Claude Code is a trademark of Anthropic. Not affiliated.</span><span class="l-vi">Claude Code là thương hiệu của Anthropic. Không liên kết.</span></div>
+      <div><a href="https://github.com/wik1ngst-1103/cc-monitor/issues"><span class="l-en">Report an issue</span><span class="l-vi">Báo lỗi</span></a></div>
+    </div>
+    <div class="wrap foot-links">
+      <a href="index.html"><span class="l-en">Home</span><span class="l-vi">Trang chủ</span></a>
+      <a href="docs.html"><span class="l-en">User guide</span><span class="l-vi">Hướng dẫn sử dụng</span></a>
+      <a href="contributing.html"><span class="l-en">Contributing</span><span class="l-vi">Đóng góp</span></a>
+      <a href="privacy.html"><span class="l-en">Privacy</span><span class="l-vi">Quyền riêng tư</span></a>
+      <a href="security.html"><span class="l-en">Security</span><span class="l-vi">Bảo mật</span></a>
+      <a href="code-of-conduct.html"><span class="l-en">Code of conduct</span><span class="l-vi">Quy tắc ứng xử</span></a>
+      <a href="license.html"><span class="l-en">License</span><span class="l-vi">Giấy phép</span></a>
+    </div>
+  </footer>
+</body>
+</html>

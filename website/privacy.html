@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title data-vi="Quyền riêng tư — ccmon">Privacy — ccmon</title>
+  <meta name="description" content="ccmon privacy: local files only, no telemetry, no network calls of its own." />
+  <link rel="canonical" href="https://cc-monitor.online/privacy.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://cc-monitor.online/privacy.html" />
+  <meta property="og:title" content="Privacy — ccmon" />
+  <meta property="og:description" content="ccmon privacy: local files only, no telemetry, no network calls of its own." />
+  <meta property="og:image" content="https://cc-monitor.online/assets/screen-main.png" />
+  <link rel="icon" href="assets/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/site.css" />
+  <link rel="stylesheet" href="assets/docs.css" />
+  <script src="assets/docs.js"></script>
+</head>
+<body>
+  <!-- Generated layout: keep the nav, sidebar and footer in sync across the docs pages. -->
+  <nav>
+    <div class="wrap">
+      <a class="logo" href="index.html"><img src="assets/logo.png" alt="" /> ccmon</a>
+      <div class="links">
+        <a class="hide-sm" href="index.html"><span class="l-en">Home</span><span class="l-vi">Trang chủ</span></a>
+        <a href="docs.html"><span class="l-en">Docs</span><span class="l-vi">Tài liệu</span></a>
+        <a class="hide-sm" href="contributing.html"><span class="l-en">Contributing</span><span class="l-vi">Đóng góp</span></a>
+        <a href="https://github.com/wik1ngst-1103/cc-monitor">GitHub</a>
+        <div class="lang"><button data-lang="en" class="on">EN</button><button data-lang="vi">VI</button></div>
+      </div>
+    </div>
+  </nav>
+
+  <header class="doc-hero">
+    <div class="wrap">
+      <div class="eyebrow"><span class="l-en">Policy</span><span class="l-vi">Chính sách</span></div>
+      <h1><span class="l-en">Privacy</span><span class="l-vi">Quyền riêng tư</span></h1>
+      <p class="lead"><span class="l-en">What ccmon reads and writes on your computer, what goes over the network (nothing from ccmon itself), and what this website collects.</span><span class="l-vi">ccmon đọc và ghi gì trên máy bạn, những gì đi qua mạng (bản thân ccmon không gửi gì), và website này thu thập gì.</span></p>
+    </div>
+  </header>
+
+  <div class="wrap doc-layout">
+    <aside class="doc-side" aria-label="Documentation">
+      <div class="grp">
+        <div class="grp-t"><span class="l-en">Pages</span><span class="l-vi">Các trang</span></div>
+        <div class="lst">
+        <a href="docs.html"><span class="l-en">User guide</span><span class="l-vi">Hướng dẫn sử dụng</span></a>
+        <a href="contributing.html"><span class="l-en">Contributing</span><span class="l-vi">Đóng góp</span></a>
+        <a href="privacy.html" class="on" aria-current="page"><span class="l-en">Privacy</span><span class="l-vi">Quyền riêng tư</span></a>
+        <a href="security.html"><span class="l-en">Security</span><span class="l-vi">Bảo mật</span></a>
+        <a href="code-of-conduct.html"><span class="l-en">Code of conduct</span><span class="l-vi">Quy tắc ứng xử</span></a>
+        <a href="license.html"><span class="l-en">License</span><span class="l-vi">Giấy phép</span></a>
+        </div>
+      </div>
+      <div class="grp toc">
+        <div class="grp-t"><span class="l-en">On this page</span><span class="l-vi">Trong trang này</span></div>
+        <div class="lst">
+        <a href="#summary"><span class="l-en">Summary</span><span class="l-vi">Tóm tắt</span></a>
+        <a href="#reads"><span class="l-en">What ccmon reads</span><span class="l-vi">ccmon đọc gì</span></a>
+        <a href="#writes"><span class="l-en">What ccmon writes</span><span class="l-vi">ccmon ghi gì</span></a>
+        <a href="#network"><span class="l-en">Network</span><span class="l-vi">Kết nối mạng</span></a>
+        <a href="#website"><span class="l-en">This website</span><span class="l-vi">Website này</span></a>
+        <a href="#sharing"><span class="l-en">Issues &amp; sharing</span><span class="l-vi">Issue &amp; chia sẻ</span></a>
+        <a href="#changes"><span class="l-en">Changes</span><span class="l-vi">Thay đổi</span></a>
+        </div>
+      </div>
+    </aside>
+
+    <main class="prose">
+<section id="summary" data-en="Summary" data-vi="Tóm tắt">
+  <h2><span class="l-en">Summary</span><span class="l-vi">Tóm tắt</span></h2>
+  <div class="l-en">
+    <div class="callout ok">
+      <p><span class="t">ccmon runs entirely on your computer.</span> It has no account, no analytics and no telemetry, and the ccmon code makes no network requests. It reads files Claude Code already keeps on your machine and writes only its own state — plus, when you ask for it, a status-line wrapper and agent files.</p>
+    </div>
+    <p>This page explains exactly what the ccmon desktop app and terminal UI read and write, the few situations where something <em>other</em> than ccmon goes online, and what this website collects. It describes the code as published in the <a href="https://github.com/wik1ngst-1103/cc-monitor">repository</a>; since ccmon is open source, you can verify every statement there.</p>
+  </div>
+  <div class="l-vi">
+    <div class="callout ok">
+      <p><span class="t">ccmon chạy hoàn toàn trên máy bạn.</span> Không tài khoản, không analytics, không telemetry, và code của ccmon không gửi yêu cầu mạng nào. Nó đọc các file Claude Code vốn đã lưu trên máy và chỉ ghi trạng thái của riêng nó — cùng, khi bạn yêu cầu, lớp bọc status line và file agent.</p>
+    </div>
+    <p>Trang này giải thích chính xác ứng dụng desktop và giao diện terminal của ccmon đọc và ghi gì, vài trường hợp mà thứ <em>khác</em> ccmon kết nối mạng, và website này thu thập gì. Nội dung mô tả code đã công bố trong <a href="https://github.com/wik1ngst-1103/cc-monitor">repo</a>; vì ccmon là mã nguồn mở, bạn có thể tự kiểm chứng từng điều ở đó.</p>
+  </div>
+</section>
+
+<section id="reads" data-en="What ccmon reads" data-vi="ccmon đọc gì">
+  <h2><span class="l-en">What ccmon reads</span><span class="l-vi">ccmon đọc gì</span></h2>
+  <div class="l-en"><ul>
+    <li><b>Transcripts</b>: <code>~/.claude/projects/**/*.jsonl</code> — sessions, sub-agents, workflow agents. These contain your prompts, the model's answers, tool inputs and outputs, and file contents the agent read or wrote.</li>
+    <li><b>File backups</b> Claude Code keeps in <code>~/.claude/file-history/</code>, to show diffs against the file before the session.</li>
+    <li><b>Capabilities</b>: skills, agents, workflows and plugins under <code>~/.claude</code> and the project's <code>.claude/</code>; MCP server definitions from <code>~/.claude.json</code> and <code>.mcp.json</code>. For MCP servers only the name, transport, command and URL are used — environment variables and headers are not read into the UI, and credentials and query strings are stripped from URLs before display.</li>
+    <li><b>Claude Code's <code>settings.json</code></b>, to show and (if you opt in) wrap your status-line command.</li>
+    <li><b>Files the agent referenced</b>, when you open them in the assets panel or file viewer, and background-task output files while a task runs.</li>
+    <li><b>Git</b>: <code>git show HEAD:&lt;path&gt;</code> runs locally when you compare a file against git HEAD.</li>
+    <li><b>System information</b>: whether a Claude Code process is still running (to mark sessions open or closed) and memory usage for the status bar.</li>
+  </ul>
+  <p>All of this stays in memory on your machine. Nothing is copied elsewhere, indexed into a database or uploaded.</p></div>
+  <div class="l-vi"><ul>
+    <li><b>Transcript</b>: <code>~/.claude/projects/**/*.jsonl</code> — phiên, subagent, agent của workflow. Chúng chứa prompt của bạn, câu trả lời của model, đầu vào và đầu ra của tool, và nội dung file agent đã đọc hoặc ghi.</li>
+    <li><b>Bản sao lưu file</b> Claude Code giữ trong <code>~/.claude/file-history/</code>, để hiện diff so với file trước phiên.</li>
+    <li><b>Capability</b>: skill, agent, workflow và plugin trong <code>~/.claude</code> và <code>.claude/</code> của dự án; định nghĩa MCP server từ <code>~/.claude.json</code> và <code>.mcp.json</code>. Với MCP server chỉ dùng tên, kiểu kết nối, lệnh và URL — biến môi trường và header không được đưa lên giao diện, thông tin đăng nhập và query string bị cắt khỏi URL trước khi hiển thị.</li>
+    <li><b><code>settings.json</code> của Claude Code</b>, để hiện và (nếu bạn đồng ý) bọc lệnh status line.</li>
+    <li><b>File agent đã nhắc tới</b>, khi bạn mở chúng trong panel Quản lý hoặc trình xem file, và file output của tác vụ nền khi tác vụ đang chạy.</li>
+    <li><b>Git</b>: <code>git show HEAD:&lt;path&gt;</code> chạy cục bộ khi bạn so file với git HEAD.</li>
+    <li><b>Thông tin hệ thống</b>: tiến trình Claude Code còn chạy không (để đánh dấu phiên đang mở hay đã đóng) và mức dùng bộ nhớ cho thanh trạng thái.</li>
+  </ul>
+  <p>Tất cả chỉ nằm trong bộ nhớ trên máy bạn. Không gì bị sao chép đi nơi khác, đưa vào cơ sở dữ liệu hay tải lên.</p></div>
+</section>
+
+<section id="writes" data-en="What ccmon writes" data-vi="ccmon ghi gì">
+  <h2><span class="l-en">What ccmon writes</span><span class="l-vi">ccmon ghi gì</span></h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th><span class="l-en">When</span><span class="l-vi">Khi nào</span></th><th><span class="l-en">What and where</span><span class="l-vi">Ghi gì, ở đâu</span></th></tr></thead>
+    <tbody>
+      <tr><td class="wrap-ok"><span class="l-en">Always (its own state)</span><span class="l-vi">Luôn luôn (trạng thái riêng)</span></td><td class="wrap-ok"><span class="l-en">Settings, per-session choices and disabled agents in <code>~/.config/ccmon/</code> (<code>%APPDATA%\ccmon\</code> on Windows); small UI preferences, such as whether the tree is collapsed, in the app window's local storage.</span><span class="l-vi">Cài đặt, lựa chọn theo session và agent bị tắt trong <code>~/.config/ccmon/</code> (<code>%APPDATA%\ccmon\</code> trên Windows); vài tuỳ chọn giao diện nhỏ, như cây có đang thu gọn không, trong bộ nhớ cục bộ của cửa sổ ứng dụng.</span></td></tr>
+      <tr><td class="wrap-ok"><span class="l-en">Status-line wrapper enabled</span><span class="l-vi">Đã bật lớp bọc status line</span></td><td class="wrap-ok"><span class="l-en">One change to <code>statusLine.command</code> in <code>~/.claude/settings.json</code> (backup in <code>settings.json.ccmon.bak</code>, removable from ⚙); each status-line refresh saves that session's status JSON (model, context and plan-usage figures) to <code>ccmon/statusline/&lt;session&gt;.json</code> in your cache folder.</span><span class="l-vi">Một thay đổi ở <code>statusLine.command</code> trong <code>~/.claude/settings.json</code> (sao lưu ở <code>settings.json.ccmon.bak</code>, gỡ được từ ⚙); mỗi lần status line làm mới, JSON trạng thái của session (model, context và số liệu hạn mức) được lưu vào <code>ccmon/statusline/&lt;session&gt;.json</code> trong thư mục cache.</span></td></tr>
+      <tr><td class="wrap-ok"><span class="l-en">You save an agent</span><span class="l-vi">Bạn lưu một agent</span></td><td class="wrap-ok"><span class="l-en">The agent file in <code>~/.claude/agents</code> or the project's <code>.claude/agents</code>, after you confirm.</span><span class="l-vi">File agent trong <code>~/.claude/agents</code> hoặc <code>.claude/agents</code> của dự án, sau khi bạn xác nhận.</span></td></tr>
+      <tr><td class="wrap-ok"><span class="l-en">You run a session from ccmon</span><span class="l-vi">Bạn chạy session từ ccmon</span></td><td class="wrap-ok"><span class="l-en">A generated <code>--settings</code> file in ccmon's <code>launch/</code> folder. Claude Code itself then writes its transcript as usual.</span><span class="l-vi">Một file <code>--settings</code> sinh ra trong thư mục <code>launch/</code> của ccmon. Sau đó chính Claude Code ghi transcript như bình thường.</span></td></tr>
+    </tbody>
+  </table></div>
+  <div class="l-en"><p>ccmon never edits transcripts, skill, plugin or MCP files, and never changes <code>settings.json</code> to switch capabilities off — those are launch flags for sessions run from ccmon.</p></div>
+  <div class="l-vi"><p>ccmon không bao giờ sửa transcript, file skill, plugin hay MCP, và không đổi <code>settings.json</code> để tắt capability — việc đó dùng cờ khởi chạy cho session chạy từ ccmon.</p></div>
+</section>
+
+<section id="network" data-en="Network" data-vi="Kết nối mạng">
+  <h2><span class="l-en">Network</span><span class="l-vi">Kết nối mạng</span></h2>
+  <div class="l-en">
+    <p>The ccmon source contains no code that opens a network connection: no HTTP requests in the Rust core, the Tauri backend or the React frontend, and the frontend loads no remote scripts, fonts or images. (The Tauri framework ships an HTTP client library among its dependencies; ccmon does not use it.) There is no update check and no crash reporting.</p>
+    <p>Things that <em>can</em> go online, and are not ccmon:</p>
+    <ul>
+      <li><b>Sessions you run from ccmon.</b> The composer starts your own <code>claude</code> binary, which talks to Anthropic (or whichever provider your Claude Code is configured for) exactly as when you run it in a terminal. Your prompts go there under your Claude Code account and its terms — ccmon sees only what Claude Code writes to the local transcript.</li>
+      <li><b>Your status-line command.</b> The wrapper runs your original command unchanged; if that command uses the network, it still does.</li>
+      <li><b>The Windows installer.</b> If WebView2 is missing, the setup downloads Microsoft's WebView2 bootstrapper.</li>
+      <li><b>MCP servers, plugins and hooks</b> are run by Claude Code, not by ccmon.</li>
+      <li><b>Links you click.</b> A web link clicked in a transcript is handed to your default browser; ccmon does not fetch it itself.</li>
+    </ul>
+  </div>
+  <div class="l-vi">
+    <p>Mã nguồn ccmon không có đoạn code nào mở kết nối mạng: không có yêu cầu HTTP trong lõi Rust, backend Tauri hay frontend React, và frontend không tải script, font hay ảnh từ xa. (Framework Tauri có một thư viện HTTP client trong các phụ thuộc; ccmon không dùng nó.) Không có kiểm tra cập nhật và không có báo cáo lỗi tự động.</p>
+    <p>Những thứ <em>có thể</em> kết nối mạng, và không phải ccmon:</p>
+    <ul>
+      <li><b>Session bạn chạy từ ccmon.</b> Ô soạn khởi chạy chính lệnh <code>claude</code> của bạn, và nó làm việc với Anthropic (hoặc nhà cung cấp mà Claude Code của bạn cấu hình) y như khi chạy ở terminal. Prompt của bạn đi tới đó theo tài khoản và điều khoản Claude Code của bạn — ccmon chỉ thấy những gì Claude Code ghi vào transcript cục bộ.</li>
+      <li><b>Lệnh status line của bạn.</b> Lớp bọc chạy nguyên lệnh gốc; nếu lệnh đó dùng mạng thì vẫn dùng.</li>
+      <li><b>Bộ cài Windows.</b> Nếu máy thiếu WebView2, bộ cài tải WebView2 bootstrapper của Microsoft.</li>
+      <li><b>MCP server, plugin và hook</b> do Claude Code chạy, không phải ccmon.</li>
+      <li><b>Liên kết bạn bấm.</b> Liên kết web bấm trong transcript được chuyển cho trình duyệt mặc định; ccmon không tự tải nó.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="website" data-en="This website" data-vi="Website này">
+  <h2><span class="l-en">This website</span><span class="l-vi">Website này</span></h2>
+  <div class="l-en"><ul>
+    <li>Hosted on <b>GitHub Pages</b>. GitHub may log technical data such as your IP address when serving the pages; see the <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub Privacy Statement</a>.</li>
+    <li>Fonts are loaded from <b>Google Fonts</b> (<code>fonts.googleapis.com</code>, <code>fonts.gstatic.com</code>).</li>
+    <li>The home page asks the public <b>GitHub API</b> (<code>api.github.com</code>) for the latest release so the download buttons point at the right files.</li>
+    <li>Your language choice is kept in your browser's local storage (<code>ccmon-lang</code>). The site sets no cookies of its own and uses no analytics or trackers.</li>
+  </ul></div>
+  <div class="l-vi"><ul>
+    <li>Được lưu trữ trên <b>GitHub Pages</b>. GitHub có thể ghi dữ liệu kỹ thuật như địa chỉ IP khi phục vụ trang; xem <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub Privacy Statement</a>.</li>
+    <li>Font được tải từ <b>Google Fonts</b> (<code>fonts.googleapis.com</code>, <code>fonts.gstatic.com</code>).</li>
+    <li>Trang chủ hỏi <b>GitHub API</b> công khai (<code>api.github.com</code>) về bản phát hành mới nhất để nút tải trỏ đúng file.</li>
+    <li>Lựa chọn ngôn ngữ được lưu trong bộ nhớ cục bộ của trình duyệt (<code>ccmon-lang</code>). Website không tự đặt cookie và không dùng analytics hay công cụ theo dõi.</li>
+  </ul></div>
+</section>
+
+<section id="sharing" data-en="Issues &amp; sharing" data-vi="Issue &amp; chia sẻ">
+  <h2><span class="l-en">When you share something with us</span><span class="l-vi">Khi bạn chia sẻ với chúng tôi</span></h2>
+  <div class="l-en"><p>Issues, pull requests and discussions on GitHub are public. Screenshots and logs of ccmon can show prompts, code, file paths and project names — please remove anything private before posting, and never attach real transcripts. For security issues use the private channel described in the <a href="security.html">Security policy</a>.</p></div>
+  <div class="l-vi"><p>Issue, pull request và thảo luận trên GitHub là công khai. Ảnh chụp và log của ccmon có thể lộ prompt, code, đường dẫn file và tên dự án — hãy xoá mọi thứ riêng tư trước khi đăng, và không bao giờ đính kèm transcript thật. Với vấn đề bảo mật, hãy dùng kênh riêng tư ở trang <a href="security.html">Chính sách bảo mật</a>.</p></div>
+</section>
+
+<section id="changes" data-en="Changes" data-vi="Thay đổi">
+  <h2><span class="l-en">Changes to this page</span><span class="l-vi">Thay đổi trang này</span></h2>
+  <div class="l-en"><p>If a future version of ccmon changes what it reads, writes or sends, this page and the README are meant to be updated together with that change. The history of this page is in the <a href="https://github.com/wik1ngst-1103/cc-monitor/commits/main/website/privacy.html">repository</a>.</p></div>
+  <div class="l-vi"><p>Nếu phiên bản sau của ccmon thay đổi những gì nó đọc, ghi hoặc gửi đi, trang này và README cần được cập nhật cùng với thay đổi đó. Lịch sử của trang này có trong <a href="https://github.com/wik1ngst-1103/cc-monitor/commits/main/website/privacy.html">repo</a>.</p></div>
+</section>
+    </main>
+  </div>
+
+  <footer>
+    <div class="wrap">
+      <div>© 2026 Lê Thanh Sơn · <a href="license.html"><span class="l-en">MIT License</span><span class="l-vi">Giấy phép MIT</span></a></div>
+      <div><span class="l-en">Claude Code is a trademark of Anthropic. Not affiliated.</span><span class="l-vi">Claude Code là thương hiệu của Anthropic. Không liên kết.</span></div>
+      <div><a href="https://github.com/wik1ngst-1103/cc-monitor/issues"><span class="l-en">Report an issue</span><span class="l-vi">Báo lỗi</span></a></div>
+    </div>
+    <div class="wrap foot-links">
+      <a href="index.html"><span class="l-en">Home</span><span class="l-vi">Trang chủ</span></a>
+      <a href="docs.html"><span class="l-en">User guide</span><span class="l-vi">Hướng dẫn sử dụng</span></a>
+      <a href="contributing.html"><span class="l-en">Contributing</span><span class="l-vi">Đóng góp</span></a>
+      <a href="privacy.html"><span class="l-en">Privacy</span><span class="l-vi">Quyền riêng tư</span></a>
+      <a href="security.html"><span class="l-en">Security</span><span class="l-vi">Bảo mật</span></a>
+      <a href="code-of-conduct.html"><span class="l-en">Code of conduct</span><span class="l-vi">Quy tắc ứng xử</span></a>
+      <a href="license.html"><span class="l-en">License</span><span class="l-vi">Giấy phép</span></a>
+    </div>
+  </footer>
+</body>
+</html>
