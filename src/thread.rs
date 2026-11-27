@@ -19,11 +19,23 @@ pub enum ThreadLink {
     Workflow(String),
 }
 
+/// `[Image: source: /path/9.png]` → the path.
+fn image_source(text: &str) -> Option<&str> {
+    let p = text
+        .trim()
+        .strip_prefix("[Image: source: ")?
+        .strip_suffix(']')?
+        .trim();
+    (!p.is_empty()).then_some(p)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Item {
     Prompt {
         ts: Option<i64>,
         text: String,
+        /// Pasted images saved by Claude Code (`[Image: source: …]` meta lines).
+        images: Vec<String>,
     },
     Thinking {
         ts: Option<i64>,
@@ -50,6 +62,8 @@ pub enum Item {
         ts: Option<i64>,
         model: Option<String>,
         usage: Option<Usage>,
+        /// API message id (matches the live draft streamed by a managed session).
+        msg_id: Option<String>,
     },
 }
 
@@ -350,6 +364,7 @@ impl Thread {
                         ts: ev.ts,
                         model: ev.model.clone(),
                         usage: ev.usage,
+                        msg_id: ev.msg_id.clone(),
                     });
                 } else if let (Some(t), Some(u)) = (turn_idx, ev.usage) {
                     if let Some(Item::Turn { usage, .. }) = items.get_mut(t) {
@@ -397,6 +412,16 @@ impl Thread {
                 }
                 Kind::User => {
                     if let Some(p) = &ev.prompt {
+                        if let Some(path) = ev.is_meta.then(|| image_source(p)).flatten() {
+                            let last = items.iter_mut().rev().find_map(|i| match i {
+                                Item::Prompt { images, .. } => Some(images),
+                                _ => None,
+                            });
+                            if let Some(images) = last {
+                                images.push(path.to_string());
+                                continue;
+                            }
+                        }
                         if ev.is_meta || p.starts_with('<') {
                             items.push(Item::System {
                                 ts: ev.ts,
@@ -406,6 +431,7 @@ impl Thread {
                             items.push(Item::Prompt {
                                 ts: ev.ts,
                                 text: p.clone(),
+                                images: Vec::new(),
                             });
                         }
                     }
@@ -773,6 +799,18 @@ mod tests {
             })
             .collect();
         assert_eq!(texts, vec!["a", "c"]);
+    }
+
+    #[test]
+    fn pasted_image_source_attaches_to_prompt() {
+        let mut t = thread(&[
+            r#"{"type":"user","uuid":"A","message":{"content":[{"type":"text","text":"see [Image #9]"},{"type":"image","source":{"type":"base64","data":"x"}}]}}"#,
+            r#"{"type":"user","uuid":"B","parentUuid":"A","isMeta":true,"message":{"content":[{"type":"text","text":"[Image: source: /tmp/s/images/9.png]"}]}}"#,
+        ]);
+        let items = t.items().to_vec();
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], Item::Prompt { text, images, .. }
+            if text == "see [Image #9]" && images == &vec!["/tmp/s/images/9.png".to_string()]));
     }
 
     #[test]

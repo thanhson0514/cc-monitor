@@ -12,14 +12,16 @@ function fmtSize(n: number | null | undefined): string {
     return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export function Viewer({ path, onClose }: { path: string; onClose: () => void }) {
+export function Viewer({ path, base, onClose }: { path: string; base?: string | null; onClose: () => void }) {
     const [p, setP] = useState<Preview | null>(null);
     const isMd = /\.(md|markdown|mdx)$/i.test(path);
     const [formatted, setFormatted] = useState(true);
+    const [openErr, setOpenErr] = useState<string | null>(null);
     useEffect(() => {
         setP(null);
-        api.preview(path).then(setP);
-    }, [path]);
+        setOpenErr(null);
+        api.preview(path, base).then(setP);
+    }, [path, base]);
     useEffect(() => {
         const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
         window.addEventListener('keydown', k);
@@ -29,7 +31,7 @@ export function Viewer({ path, onClose }: { path: string; onClose: () => void })
         <div className="viewer-backdrop" onClick={onClose}>
             <div className="viewer" onClick={(e) => e.stopPropagation()}>
                 <div className="viewer-head">
-                    <PathLabel path={path} />
+                    <PathLabel path={p?.path ?? path} />
                     <span className="muted small">{p ? fmtSize(p.size) : ''}</span>
                     {isMd && p?.kind === 'text' && (
                         <div className="seg-toggle">
@@ -49,6 +51,17 @@ export function Viewer({ path, onClose }: { path: string; onClose: () => void })
                     >
                         ⧉ Đường dẫn
                     </button>
+                    {p && p.kind !== 'missing' && (
+                        <button
+                            type="button"
+                            className="link-btn"
+                            onClick={() => api.openExternal(p.path, base).catch((e) => setOpenErr(String(e)))}
+                            title="Mở bằng ứng dụng mặc định của hệ thống"
+                        >
+                            ↗ Mở ngoài
+                        </button>
+                    )}
+                    {openErr && <span className="small err-text">{openErr}</span>}
                     <button type="button" className="viewer-close" onClick={onClose}>
                         ✕
                     </button>

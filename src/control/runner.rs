@@ -2,8 +2,9 @@
 //! `claude -p --input-format stream-json --output-format stream-json` child per
 //! session (std::process + threads, no async).
 //!
-//! Stdout is used for state only (`system/init`, `result`, session id); the
-//! conversation itself is still rendered from the transcript JSONL.
+//! Stdout is used for state (`system/init`, `result`, session id) and for the
+//! live [`Draft`] of the message being streamed (`--include-partial-messages`);
+//! the conversation itself is still rendered from the transcript JSONL.
 //!
 //! Change notification: `Manager` takes an [`OnChange`] callback
 //! `Fn(sid, &RunState)`. It is invoked from the per-child stdout reader thread
@@ -11,6 +12,7 @@
 //! The reader thread never touches the `Manager`, so the callback must not
 //! lock the `Manager` either: just forward/emit the event. `sid` is `""` until
 //! a new session's id is known.
+use super::draft::{Change, Draft};
 use super::{LaunchSpec, Overlay};
 use crate::discovery::LiveInfo;
 use serde::Serialize;
@@ -20,7 +22,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Bytes of child stderr kept for [`RunState::Exited`].
 pub const STDERR_TAIL: usize = 4096;
@@ -29,6 +31,13 @@ const SID_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// State-change observer: `(sid, new_state)`. See module docs.
 pub type OnChange = dyn Fn(&str, &RunState) + Send + Sync;
+
+/// Live-draft observer: `(sid, draft)`, called from the reader thread like
+/// [`OnChange`], at most every [`DRAFT_EVERY`] for text deltas.
+pub type OnDraft = dyn Fn(&str, &Draft) + Send + Sync;
+
+/// Throttle for draft text deltas (block starts/stops are sent at once).
+pub const DRAFT_EVERY: Duration = Duration::from_millis(60);
 
 /// Serialized as `{"kind":"idle"}` … `{"kind":"exited","code":1,"stderrTail":"…"}`.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -95,6 +104,9 @@ struct Inner {
     tail: Mutex<Vec<u8>>,
     settings_file: Option<PathBuf>,
     on_change: Option<Arc<OnChange>>,
+    on_draft: Option<Arc<OnDraft>>,
+    /// Draft and when it was last sent (reader thread only, but `Inner` is shared).
+    draft: Mutex<(Draft, Option<Instant>)>,
 }
 
 impl Inner {
@@ -138,6 +150,15 @@ impl ManagedSession {
 
     /// `spawn` with a state-change callback (called from the reader thread).
     pub fn spawn_observed(spec: LaunchSpec, on_change: Option<Arc<OnChange>>) -> io::Result<Self> {
+        Self::spawn_with(spec, on_change, None)
+    }
+
+    /// `spawn_observed` plus a live-draft callback.
+    pub fn spawn_with(
+        spec: LaunchSpec,
+        on_change: Option<Arc<OnChange>>,
+        on_draft: Option<Arc<OnDraft>>,
+    ) -> io::Result<Self> {
         let spawned = spawn_retrying(&spec);
         let mut child = match spawned {
             Ok(c) => c,
@@ -163,6 +184,8 @@ impl ManagedSession {
             tail: Mutex::new(Vec::new()),
             settings_file: spec.settings_file.clone(),
             on_change,
+            on_draft,
+            draft: Mutex::new((Draft::default(), None)),
         });
         let child = Arc::new(Mutex::new(child));
         let err_h = stderr.map(|e| {
@@ -419,6 +442,9 @@ fn on_event(v: &serde_json::Value, inner: &Inner) {
         .and_then(|s| s.as_str())
         .filter(|s| super::state::valid_sid(s))
         .map(String::from);
+    if ty == "stream_event" {
+        on_stream_event(v, inner);
+    }
     inner.update(|s| {
         if s.sid.is_none() {
             s.sid = sid;
@@ -432,6 +458,29 @@ fn on_event(v: &serde_json::Value, inner: &Inner) {
     });
 }
 
+fn on_stream_event(v: &serde_json::Value, inner: &Inner) {
+    let Some(cb) = &inner.on_draft else { return };
+    let out = {
+        let mut g = inner.draft.lock().unwrap_or_else(|e| e.into_inner());
+        let (draft, last) = &mut *g;
+        let Some(change) = draft.apply(v) else { return };
+        let due = change == Change::Now || last.is_none_or(|t| t.elapsed() >= DRAFT_EVERY);
+        if !due {
+            return;
+        }
+        *last = Some(Instant::now());
+        draft.clone()
+    };
+    let sid = {
+        let g = inner.lock();
+        if g.stopped {
+            return;
+        }
+        g.sid.clone().unwrap_or_default()
+    };
+    cb(&sid, &out);
+}
+
 struct Entry {
     s: ManagedSession,
     overlay: Overlay,
@@ -441,6 +490,7 @@ struct Entry {
 pub struct Manager {
     sessions: HashMap<String, Entry>,
     on_change: Arc<OnChange>,
+    on_draft: Option<Arc<OnDraft>>,
     state_dir: PathBuf,
     /// `None` = locate `claude` via `find_claude()` on each launch.
     program: Option<PathBuf>,
@@ -452,6 +502,7 @@ impl Manager {
         Self {
             sessions: HashMap::new(),
             on_change: Arc::from(on_change),
+            on_draft: None,
             state_dir: super::state::state_dir(),
             program: None,
         }
@@ -462,9 +513,16 @@ impl Manager {
         Self {
             sessions: HashMap::new(),
             on_change: Arc::from(on_change),
+            on_draft: None,
             state_dir,
             program: Some(program),
         }
+    }
+
+    /// Receive the live draft of each session's streaming message.
+    pub fn with_draft_observer(mut self, f: Box<OnDraft>) -> Self {
+        self.on_draft = Some(Arc::from(f));
+        self
     }
 
     fn notify(&self, sid: &str, st: &RunState) {
@@ -481,9 +539,10 @@ impl Manager {
             Some(p) => super::build_args_with(p.clone(), sid, cwd, o, &self.state_dir)?,
             None => super::build_args(sid, cwd, o, &self.state_dir)?,
         };
-        Ok(ManagedSession::spawn_observed(
+        Ok(ManagedSession::spawn_with(
             spec,
             Some(self.on_change.clone()),
+            self.on_draft.clone(),
         )?)
     }
 
@@ -749,6 +808,10 @@ while IFS= read -r line; do
       echo '{{"type":"result","subtype":"error_during_execution","session_id":"'$SID'"}}' ;;
     *)
       echo '{{"type":"system","subtype":"init","session_id":"'$SID'"}}'
+      echo '{{"type":"stream_event","session_id":"'$SID'","parent_tool_use_id":null,"event":{{"type":"message_start","message":{{"id":"msg_f"}}}}}}'
+      echo '{{"type":"stream_event","session_id":"'$SID'","parent_tool_use_id":null,"event":{{"type":"content_block_start","index":0,"content_block":{{"type":"text","text":""}}}}}}'
+      echo '{{"type":"stream_event","session_id":"'$SID'","parent_tool_use_id":null,"event":{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"hi"}}}}}}'
+      echo '{{"type":"stream_event","session_id":"'$SID'","parent_tool_use_id":null,"event":{{"type":"content_block_stop","index":0}}}}'
       echo 'not json at all'
       echo '{{"type":"assistant","session_id":"'$SID'"}}'
       {gate}
@@ -949,6 +1012,31 @@ done
         assert_eq!(s.state(), RunState::Busy);
         std::fs::write(f.gate(), "").unwrap();
         wait_for("idle after result", || s.state() == RunState::Idle);
+        s.stop();
+    }
+
+    #[test]
+    fn streams_draft_to_observer() {
+        let f = fake(false);
+        let seen: Arc<Mutex<Vec<(String, Draft)>>> = Arc::default();
+        let sink = seen.clone();
+        let cb: Arc<OnDraft> = Arc::new(move |sid: &str, d: &Draft| {
+            sink.lock().unwrap().push((sid.to_string(), d.clone()))
+        });
+        let mut s =
+            ManagedSession::spawn_with(f.spec(Some("d1"), &Overlay::default()), None, Some(cb))
+                .unwrap();
+        s.send("go").unwrap();
+        wait_for("block stop", || {
+            seen.lock()
+                .unwrap()
+                .last()
+                .is_some_and(|(_, d)| d.blocks.first().is_some_and(|b| b.done))
+        });
+        let (sid, d) = seen.lock().unwrap().last().cloned().unwrap();
+        assert_eq!(sid, "d1");
+        assert_eq!(d.msg_id, "msg_f");
+        assert_eq!(d.blocks[0].text, "hi");
         s.stop();
     }
 

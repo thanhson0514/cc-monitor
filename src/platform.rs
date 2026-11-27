@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-fn home() -> PathBuf {
+pub fn home() -> PathBuf {
     dirs::home_dir().unwrap_or_default()
 }
 

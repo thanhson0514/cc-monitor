@@ -222,6 +222,13 @@ struct LinkDto {
     report: Option<String>,
 }
 
+/// Live text of the message a managed session is streaming (`draft` event).
+#[derive(Serialize, Clone)]
+struct DraftEvent<'a> {
+    sid: &'a str,
+    draft: &'a cc_monitor::control::draft::Draft,
+}
+
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 enum ItemDto {
@@ -229,13 +236,16 @@ enum ItemDto {
         idx: usize,
         ts: Option<i64>,
         text: String,
+        images: Vec<String>,
     },
+    #[serde(rename_all = "camelCase")]
     Turn {
         idx: usize,
         ts: Option<i64>,
         model: Option<String>,
         input: u64,
         output: u64,
+        msg_id: Option<String>,
     },
     Thinking {
         idx: usize,
@@ -292,6 +302,8 @@ struct ThreadDto {
     assistant_label: String,
     total: usize,
     items: Vec<ItemDto>,
+    /// Session working directory (resolves relative paths in the thread).
+    cwd: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -397,19 +409,39 @@ fn get_thread(state: State<Shared>, key: String, tail: Option<usize>) -> Option<
             assistant_label,
             total: 0,
             items: vec![],
+            cwd: None,
         });
     }
     let sid = id.session().to_string();
-    let items: Vec<Item> = store.thread_mut(&id)?.items().to_vec();
+    let th = store.thread_mut(&id)?;
+    let items: Vec<Item> = th.items().to_vec();
+    let cwd = th.cwd().map(str::to_string).or_else(|| {
+        store
+            .sessions
+            .get(&sid)
+            .and_then(|s| s.main.cwd())
+            .map(str::to_string)
+    });
     let total = items.len();
     let start = total.saturating_sub(tail.unwrap_or(400));
     let mut out = Vec::with_capacity(total - start);
     for (idx, it) in items.into_iter().enumerate().skip(start) {
         out.push(match it {
-            Item::Prompt { ts, text } => ItemDto::Prompt { idx, ts, text },
-            Item::Turn { ts, model, usage } => ItemDto::Turn {
+            Item::Prompt { ts, text, images } => ItemDto::Prompt {
                 idx,
                 ts,
+                text,
+                images,
+            },
+            Item::Turn {
+                ts,
+                model,
+                usage,
+                msg_id,
+            } => ItemDto::Turn {
+                idx,
+                ts,
+                msg_id,
                 model: model.as_deref().map(metrics::model_label),
                 input: usage.map(|u| u.input).unwrap_or(0),
                 output: usage.map(|u| u.output).unwrap_or(0),
@@ -490,6 +522,7 @@ fn get_thread(state: State<Shared>, key: String, tail: Option<usize>) -> Option<
         assistant_label,
         total,
         items: out,
+        cwd,
     })
 }
 
@@ -772,9 +805,40 @@ async fn tail_task_output(path: String, max: Option<u64>) -> Result<TailDto, Str
     .map_err(|e| e.to_string())
 }
 
+/// Open an http(s) URL or an existing local file/folder with the system's
+/// default application (links in the transcript, "open with" in the viewer).
 #[tauri::command]
-fn preview_file(path: String) -> assets::Preview {
-    assets::preview(&path)
+fn open_external(target: String, base: Option<String>) -> Result<(), String> {
+    let t = if target.starts_with("https://") || target.starts_with("http://") {
+        target
+    } else {
+        let p = assets::resolve_path(&target, base.as_deref());
+        if !std::path::Path::new(&p).exists() {
+            return Err(format!("không tìm thấy: {p}"));
+        }
+        p
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = std::process::Command::new("explorer");
+    #[cfg(target_os = "macos")]
+    let mut cmd = std::process::Command::new("open");
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let mut cmd = std::process::Command::new("xdg-open");
+    cmd.arg(&t)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|mut c| {
+            // Reap the launcher so it does not linger as a zombie.
+            std::thread::spawn(move || c.wait());
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn preview_file(path: String, base: Option<String>) -> assets::Preview {
+    assets::preview(&assets::resolve_path(&path, base.as_deref()))
 }
 
 #[derive(Serialize)]
@@ -888,6 +952,7 @@ fn main() {
     // The change callback runs on reader threads: it only emits, never locks the Manager.
     let app_handle: Arc<std::sync::OnceLock<tauri::AppHandle>> = Arc::default();
     let cb_handle = app_handle.clone();
+    let draft_handle = app_handle.clone();
     let manager: cmd_control::SharedManager = Arc::new(Mutex::new(
         cc_monitor::control::runner::Manager::new(Box::new(move |sid, st| {
             if let Some(h) = cb_handle.get() {
@@ -898,6 +963,11 @@ fn main() {
                         run_state: st.clone(),
                     },
                 );
+            }
+        }))
+        .with_draft_observer(Box::new(move |sid, d| {
+            if let (Some(h), false) = (draft_handle.get(), sid.is_empty()) {
+                let _ = h.emit("draft", DraftEvent { sid, draft: d });
             }
         })),
     ));
@@ -970,6 +1040,7 @@ fn main() {
             remove_statusline,
             get_diff,
             preview_file,
+            open_external,
             tail_task_output,
             cmd_agents::list_agents,
             cmd_agents::list_workflows,

@@ -46,8 +46,8 @@ export interface TailDto {
 }
 
 export type Item =
-    | { type: 'prompt'; idx: number; ts: number | null; text: string }
-    | { type: 'turn'; idx: number; ts: number | null; model: string | null; input: number; output: number }
+    | { type: 'prompt'; idx: number; ts: number | null; text: string; images: string[] }
+    | { type: 'turn'; idx: number; ts: number | null; model: string | null; input: number; output: number; msgId: string | null }
     | { type: 'thinking'; idx: number; ts: number | null; text: string; ms: number | null }
     | { type: 'text'; idx: number; ts: number | null; text: string }
     | {
@@ -80,6 +80,25 @@ export interface ThreadView {
     assistantLabel: string;
     total: number;
     items: Item[];
+    /** Session working directory (relative paths in the thread resolve against it). */
+    cwd: string | null;
+}
+
+/** Live text of the message a managed session is streaming (`draft` event). */
+export interface DraftBlock {
+    kind: 'text' | 'thinking' | 'tool';
+    /** Text so far; for a tool, the tail of its partial input JSON. */
+    text: string;
+    name: string | null;
+    /** Full length of a tool's partial input (chars). */
+    len: number;
+    done: boolean;
+}
+
+export interface Draft {
+    msgId: string;
+    blocks: DraftBlock[];
+    done: boolean;
 }
 
 export interface StatusInfo {
@@ -374,7 +393,8 @@ export const api = {
     openSession: (sid: string) => invoke<void>('open_session', { sid }),
     assets: (key: string, scope: 'session' | 'thread') => invoke<Assets | null>('get_assets', { key, scope }),
     tailTaskOutput: (path: string) => invoke<TailDto>('tail_task_output', { path }),
-    preview: (path: string) => invoke<Preview>('preview_file', { path }),
+    preview: (path: string, base?: string | null) => invoke<Preview>('preview_file', { path, base: base ?? null }),
+    openExternal: (target: string, base?: string | null) => invoke<void>('open_external', { target, base: base ?? null }),
     changes: (key: string) => invoke<ChangedFile[] | null>('get_changes', { key }),
     diff: (key: string, path: string, baseline: string | null) => invoke<DiffView | null>('get_diff', { key, path, baseline })
 };
