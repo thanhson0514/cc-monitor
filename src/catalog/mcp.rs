@@ -20,6 +20,19 @@ pub fn normalize(name: &str) -> String {
         .collect()
 }
 
+/// Compare key for a project path in `~/.claude.json`: Claude Code writes
+/// Windows paths with `/` (and drive letters in either case), so separators,
+/// a trailing slash and (on Windows) case are ignored.
+fn path_key(p: &str) -> String {
+    let s = p.replace('\\', "/");
+    let s = s.trim_end_matches('/').to_string();
+    if cfg!(windows) {
+        s.to_lowercase()
+    } else {
+        s
+    }
+}
+
 fn read_json(p: &Path) -> Option<Value> {
     serde_json::from_str(&std::fs::read_to_string(p).ok()?).ok()
 }
@@ -115,7 +128,11 @@ impl Provider for McpProvider {
             let proj = cj
                 .as_ref()
                 .and_then(|j| j.get("projects"))
-                .and_then(|p| p.get(cwd.to_string_lossy().as_ref()));
+                .and_then(|p| p.as_object())
+                .and_then(|m| {
+                    let want = path_key(&cwd.to_string_lossy());
+                    m.iter().find(|(k, _)| path_key(k) == want).map(|(_, v)| v)
+                });
             let disabled = names(proj.and_then(|p| p.get("disabledMcpjsonServers")));
             let file = cwd.join(".mcp.json");
             if let Some(v) = read_json(&file) {
@@ -137,6 +154,13 @@ mod tests {
     use super::super::write;
     use super::*;
 
+    #[test]
+    fn project_key_ignores_separator_style_and_trailing_slash() {
+        assert_eq!(path_key(r"C:\Users\me\proj\"), path_key("C:/Users/me/proj"));
+        assert_eq!(path_key("/home/me/proj/"), path_key("/home/me/proj"));
+        assert_ne!(path_key("/home/me/proj"), path_key("/home/me/other"));
+    }
+
     fn ctx(root: &std::path::Path) -> ScanCtx {
         let home = root.join("home/.claude");
         let cwd = root.join("proj");
@@ -146,9 +170,9 @@ mod tests {
             &format!(
                 r#"{{"mcpServers":{{"codegraph":{{"command":"codegraph","args":["serve","--token","SECRET"],"env":{{"K":"SECRET"}}}},
                   "web":{{"type":"http","url":"https://x.test/mcp?key=SECRET"}}}},
-                  "projects":{{"{p}":{{"mcpServers":{{"local":{{"command":"l"}},"web":{{"type":"sse","url":"https://p.test"}}}},
+                  "projects":{{{p}:{{"mcpServers":{{"local":{{"command":"l"}},"web":{{"type":"sse","url":"https://p.test"}}}},
                   "disabledMcpjsonServers":["off"],"enabledMcpjsonServers":["on"]}}}}}}"#,
-                p = cwd.display()
+                p = serde_json::to_string(&cwd).unwrap()
             ),
         );
         write(
@@ -162,8 +186,8 @@ mod tests {
         write(
             &home.join("plugins/installed_plugins.json"),
             &format!(
-                r#"{{"plugins":{{"gitlab@mk":[{{"scope":"user","installPath":"{}"}}]}}}}"#,
-                inst.display()
+                r#"{{"plugins":{{"gitlab@mk":[{{"scope":"user","installPath":{}}}]}}}}"#,
+                serde_json::to_string(&inst).unwrap()
             ),
         );
         write(

@@ -206,8 +206,8 @@ mod tests {
         write(
             &home.join("plugins/installed_plugins.json"),
             &format!(
-                r#"{{"version":2,"plugins":{{"foo@mk":[{{"scope":"user","installPath":"{}","version":"1.0"}}]}}}}"#,
-                inst.display()
+                r#"{{"version":2,"plugins":{{"foo@mk":[{{"scope":"user","installPath":{},"version":"1.0"}}]}}}}"#,
+                serde_json::to_string(&inst).unwrap()
             ),
         );
         ScanCtx {
@@ -279,8 +279,8 @@ mod tests {
         };
         // user + project (this cwd): project wins
         w(&format!(
-            r#"{{"plugins":{{"foo@mk":[{{"scope":"user","installPath":"/u","version":"1"}},{{"scope":"project","installPath":"/p","version":"2","projectPath":"{}"}}]}}}}"#,
-            proj.display()
+            r#"{{"plugins":{{"foo@mk":[{{"scope":"user","installPath":"/u","version":"1"}},{{"scope":"project","installPath":"/p","version":"2","projectPath":{}}}]}}}}"#,
+            serde_json::to_string(&proj).unwrap()
         ));
         let cap = &PluginProvider.scan(&ctx)[0];
         assert_eq!(cap.scope, Scope::Project);

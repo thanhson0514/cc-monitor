@@ -114,8 +114,8 @@ mod tests {
         write(
             &home.join("plugins/installed_plugins.json"),
             &format!(
-                r#"{{"plugins":{{"pl@mk":[{{"scope":"user","installPath":"{}"}}]}}}}"#,
-                inst.display()
+                r#"{{"plugins":{{"pl@mk":[{{"scope":"user","installPath":{}}}]}}}}"#,
+                serde_json::to_string(&inst).unwrap()
             ),
         );
         write(
