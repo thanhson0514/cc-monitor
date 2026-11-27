@@ -333,6 +333,12 @@ impl Store {
         }
     }
 
+    /// Status of subagent `aid` as its tree row shows it, without building the tree.
+    pub fn agent_status_of(&self, sid: &str, aid: &str, now: i64) -> Option<Status> {
+        let a = self.sessions.get(sid)?.agents.get(aid)?;
+        Some(self.agent_status(sid, a, now))
+    }
+
     /// Flattened tree: sessions (most recently written first) → agents/workflows.
     pub fn tree(&self, now: i64) -> Vec<TreeRow> {
         let mut sids: Vec<&String> = self.sessions.keys().collect();
@@ -655,6 +661,19 @@ mod tests {
             events: vec![ev(r#"{"type":"user","uuid":"b","parentUuid":"a","message":{"content":[{"type":"tool_result","tool_use_id":"h","content":"ok"}]}}"#)],
         });
         assert_eq!(st.tree(1500)[1].status, Status::Done);
+    }
+
+    #[test]
+    fn agent_status_of_matches_tree_row() {
+        let st = store();
+        for now in [1000, 1000 + AGENT_IDLE_DONE_MS + 1, 1000 + ACTIVE_MS + 1] {
+            let rows = st.tree(now);
+            for (aid, row) in [("x", &rows[1]), ("w1", &rows[3])] {
+                assert_eq!(st.agent_status_of("s", aid, now), Some(row.status), "{aid} {now}");
+            }
+        }
+        assert_eq!(st.agent_status_of("s", "nope", 0), None);
+        assert_eq!(st.agent_status_of("zz", "x", 0), None);
     }
 
     #[test]

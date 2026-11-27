@@ -6,7 +6,7 @@
 //! The plan (`plan_action`) is pure; `Ctx::act` runs it over the session's
 //! channel: ccmon's own `-p` child (`stop_task` + queued message), a non-live
 //! session (`Manager::send` resumes it) or a tmux pane (main is asked to call
-//! TaskStop itself).
+//! TaskStop itself; a foreground agent is interrupted with Esc first).
 
 use cc_monitor::catalog::{CapKind, Capability, Scope};
 use cc_monitor::control::runner::RunState;
@@ -20,7 +20,8 @@ use cc_monitor::store::NodeId;
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::sync::Mutex;
+use std::time::{Duration, SystemTime};
 use tauri::State;
 
 use crate::cmd_agents::{session_agents, BUILTIN_AGENTS};
@@ -28,6 +29,33 @@ use crate::cmd_control::{blocking, err_text, lock, reason_text, Ctx, Route};
 use crate::Shared;
 
 pub const BUSY_NEW_AGENT: &str = "Session đang bận — chờ lượt hiện tại xong rồi đổi sang agent mới";
+/// Resume/swap while the agent has not stopped yet (terminal pause pending).
+pub const STILL_RUNNING: &str = "Subagent vẫn đang chạy — chờ nó dừng hẳn rồi thử lại";
+pub const IN_FLIGHT_TEXT: &str = "Đang xử lý thao tác trước, thử lại sau";
+/// Time Claude Code gets to handle an Esc before the message is pasted.
+const AFTER_ESCAPE: Duration = Duration::from_millis(400);
+
+/// Sessions with a subagent action in progress (one at a time per session).
+static IN_FLIGHT: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
+
+/// Held while an action runs on a session; released on drop.
+pub struct InFlight(String);
+
+impl InFlight {
+    pub fn take(sid: &str) -> Result<Self, String> {
+        if lock(&IN_FLIGHT).insert(sid.to_string()) {
+            Ok(Self(sid.to_string()))
+        } else {
+            Err(IN_FLIGHT_TEXT.into())
+        }
+    }
+}
+
+impl Drop for InFlight {
+    fn drop(&mut self) {
+        lock(&IN_FLIGHT).remove(&self.0);
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -37,6 +65,9 @@ pub struct SubagentDto {
     pub status: String,
     /// ccmon holds a pause marker for it.
     pub paused: bool,
+    /// Paused, but main was only asked to stop it and the agent still runs:
+    /// resume/swap are refused until it stops.
+    pub stopping: bool,
     /// "managed" | "tmux"; `None` = not controllable now (see `reason`).
     pub channel: Option<&'static str>,
     pub reason: Option<&'static str>,
@@ -46,6 +77,9 @@ pub struct SubagentDto {
 pub enum Step {
     /// `stop_task` on ccmon's own child.
     StopTask,
+    /// Esc into the tmux pane: interrupts main's turn and the foreground
+    /// subagent inside it.
+    Escape,
     /// Message to main.
     Send(String),
     MarkPaused,
@@ -65,10 +99,15 @@ pub fn plan_action(
 ) -> Result<Vec<Step>, String> {
     // `idle`: pending tools but quiet for a while (long Bash call): still running.
     let running = matches!(status, "running" | "idle");
-    // Managed: ccmon stops the task itself; terminal: main is asked to.
-    let stop_and = |msg: String| match ch {
-        Channel::Managed => vec![Step::StopTask, Step::Send(msg)],
-        Channel::Terminal => vec![Step::Send(msg)],
+    // Managed: ccmon stops the task itself. Terminal: a foreground agent
+    // blocks main inside the Agent call, so Esc interrupts main's turn and the
+    // agent with it; a background agent is stopped by main (TaskStop).
+    let stop_and = |msg: fn(&SubagentCall, Channel) -> String| match ch {
+        Channel::Managed => vec![Step::StopTask, Step::Send(msg(call, Channel::Managed))],
+        Channel::Terminal if !call.background => {
+            vec![Step::Escape, Step::Send(msg(call, Channel::Managed))]
+        }
+        Channel::Terminal => vec![Step::Send(msg(call, Channel::Terminal))],
     };
     match action {
         "pause" => {
@@ -78,13 +117,16 @@ pub fn plan_action(
             if !running {
                 return Err("Subagent không còn chạy — không tạm dừng được".into());
             }
-            let mut v = stop_and(pause_msg(call, ch));
+            let mut v = stop_and(pause_msg);
             v.push(Step::MarkPaused);
             Ok(v)
         }
         "resume" | "swap" => {
             if !paused {
                 return Err("Subagent chưa được ccmon tạm dừng".into());
+            }
+            if running {
+                return Err(STILL_RUNNING.into());
             }
             let msg = if action == "resume" {
                 resume_msg(call, transcript)
@@ -104,7 +146,7 @@ pub fn plan_action(
                     Step::Unmark,
                 ])
             } else if running {
-                Ok(stop_and(cancel_msg(call, ch)))
+                Ok(stop_and(cancel_msg))
             } else {
                 Err("Subagent đã kết thúc — không còn gì để huỷ".into())
             }
@@ -159,8 +201,19 @@ pub fn pick_target(
     Err(format!("Không có agent {name} trong danh sách của session"))
 }
 
+/// Status `plan_action` sees: a marker whose task ccmon stopped itself reads
+/// `done` even while the tree row still says running (the row only turns done
+/// once the transcript goes quiet).
+pub fn effective_status<'a>(status: &'a str, marker: Option<&Paused>) -> &'a str {
+    if marker.is_some_and(|m| m.stopped) {
+        "done"
+    } else {
+        status
+    }
+}
+
 /// Run `steps` in order through `exec`, stopping at the first failure, except
-/// for markers: once `StopTask` succeeded the agent is stopped, so a later
+/// for markers: once `StopTask`/`Escape` succeeded the agent is stopped, so a later
 /// failure (telling main) still saves a pause marker — resume, swap or cancel
 /// can then resend. Returns the first error.
 pub fn run_steps(
@@ -180,7 +233,7 @@ pub fn run_steps(
         }
         match exec(step) {
             Ok(()) => match step {
-                Step::StopTask => stopped = true,
+                Step::StopTask | Step::Escape => stopped = true,
                 Step::MarkPaused => marked = true,
                 _ => {}
             },
@@ -213,14 +266,10 @@ fn info(ctx: &Ctx, key: &str) -> Option<Info> {
         return None;
     };
     let st = lock(&ctx.store);
-    let status = st
-        .tree(discovery::now_ms())
-        .into_iter()
-        .find(|r| r.id == id)
-        .map(|r| crate::status_str(r.status))?;
     let s = st.sessions.get(sid)?;
     let call = find_call(&s.main, aid)?;
     let transcript = s.agents.get(aid)?.path.clone();
+    let status = crate::status_str(st.agent_status_of(sid, aid, discovery::now_ms())?);
     Some(Info {
         sid: sid.clone(),
         call,
@@ -229,19 +278,21 @@ fn info(ctx: &Ctx, key: &str) -> Option<Info> {
     })
 }
 
-fn is_paused(sid: &str, aid: &str) -> bool {
+fn marker(sid: &str, aid: &str) -> Option<Paused> {
     state::load_paused(sid)
-        .iter()
-        .any(|p| p.call.agent_id == aid)
+        .into_iter()
+        .find(|p| p.call.agent_id == aid)
 }
 
-fn set_marker(sid: &str, call: &SubagentCall, on: bool) -> Result<(), String> {
+/// `on`: save a marker (`stopped` = ccmon stopped the task itself); else drop it.
+fn set_marker(sid: &str, call: &SubagentCall, on: bool, stopped: bool) -> Result<(), String> {
     let mut v = state::load_paused(sid);
     v.retain(|p| p.call.agent_id != call.agent_id);
     if on {
         v.push(Paused {
             call: call.clone(),
             at: discovery::now_ms(),
+            stopped,
         });
     }
     state::save_paused(sid, &v).map_err(|e| format!("Không lưu được trạng thái tạm dừng: {e}"))
@@ -253,13 +304,25 @@ fn mtime(p: &Path) -> Option<SystemTime> {
 
 fn subagent_dto(ctx: &Ctx, key: &str) -> Option<SubagentDto> {
     let i = info(ctx, key)?;
-    let (channel, reason) = match ctx.route(&i.sid) {
-        Ok(Route::Tmux(_)) => (Some("tmux"), None),
-        Ok(_) => (Some("managed"), None),
-        Err(code) => (None, Some(code)),
+    let m = marker(&i.sid, &i.call.agent_id);
+    let active = matches!(
+        effective_status(&i.status, m.as_ref()),
+        "running" | "idle"
+    );
+    // No controls for a finished, unpaused agent: skip the channel check
+    // (tmux forks) entirely.
+    let (channel, reason) = if active || m.is_some() {
+        match ctx.route(&i.sid) {
+            Ok(Route::Tmux(_)) => (Some("tmux"), None),
+            Ok(_) => (Some("managed"), None),
+            Err(code) => (None, Some(code)),
+        }
+    } else {
+        (None, None)
     };
     Some(SubagentDto {
-        paused: is_paused(&i.sid, &i.call.agent_id),
+        paused: m.is_some(),
+        stopping: m.is_some() && active,
         call: i.call,
         status: i.status,
         channel,
@@ -275,22 +338,30 @@ fn send(ctx: &Ctx, route: &Route, sid: &str, text: &str) -> Result<(), String> {
             .send_queued(sid, text)
             .map_err(|e| err_text(&e)),
         Route::Resume => ctx.send_resume(sid, text).map(|_| ()),
-        Route::Tmux(p) => tmux::send_text(p, text).map_err(|e| format!("Lỗi tmux: {e}")),
+        Route::Tmux(p) => tmux::send_text(p, text).map_err(|e| tmux::error_text(&e)),
     }
 }
 
+const NO_CALL: &str = "Không tìm thấy lệnh gọi subagent này (agent lồng nhau hoặc trong workflow)";
+
+/// Swap target `name` for session `sid`, checked against its agent listing.
+fn swap_target(ctx: &Ctx, sid: &str, name: &str) -> Result<Option<PathBuf>, String> {
+    let ov = effective(&state::load_overlay(sid), &state::load_registry());
+    let items = session_agents(ctx.store.clone(), ctx.root.clone(), sid);
+    pick_target(&items, &ov.disabled_agents, name)
+}
+
 fn act(ctx: &Ctx, key: &str, action: &str, agent: Option<&str>) -> Result<(), String> {
-    let i = info(ctx, key)
-        .ok_or("Không tìm thấy lệnh gọi subagent này (agent lồng nhau hoặc trong workflow)")?;
+    let i = info(ctx, key).ok_or(NO_CALL)?;
     let sid = i.sid.as_str();
-    let paused = is_paused(sid, &i.call.agent_id);
+    let _guard = InFlight::take(sid)?;
+    let m = marker(sid, &i.call.agent_id);
+    let paused = m.is_some();
+    let status = effective_status(&i.status, m.as_ref());
     // Validate the swap target (catalog scan) before routing, so the tmux
     // check stays right before the send.
     let file = if action == "swap" {
-        let name = agent.unwrap_or_default();
-        let ov = effective(&state::load_overlay(sid), &state::load_registry());
-        let items = session_agents(ctx.store.clone(), ctx.root.clone(), sid);
-        Some(pick_target(&items, &ov.disabled_agents, name)?)
+        Some(swap_target(ctx, sid, agent.unwrap_or_default())?)
     } else {
         None
     };
@@ -301,7 +372,7 @@ fn act(ctx: &Ctx, key: &str, action: &str, agent: Option<&str>) -> Result<(), St
     };
     let steps = plan_action(
         action,
-        &i.status,
+        status,
         paused,
         ch,
         &i.call,
@@ -311,29 +382,56 @@ fn act(ctx: &Ctx, key: &str, action: &str, agent: Option<&str>) -> Result<(), St
     if let Some(file) = file {
         // tmux sessions hot-reload agents; a ccmon child must be restarted.
         if matches!(route, Route::Managed) {
+            let file_mtime = file.as_deref().and_then(mtime);
             let mut m = lock(&ctx.manager);
-            let need = restart_needed(
-                file.as_deref().and_then(mtime),
-                m.started(sid),
-                m.state(sid),
-            )?;
+            let need = restart_needed(file_mtime, m.started(sid), m.state(sid))?;
             if need {
                 m.stop(sid);
                 route = Route::Resume;
             }
         }
     }
+    let mut stopped = false;
     run_steps(steps, |step| match step {
         Step::StopTask => match route {
-            Route::Managed => lock(&ctx.manager)
-                .stop_task(sid, &i.call.agent_id)
-                .map_err(|e| err_text(&e)),
+            Route::Managed => {
+                let r = lock(&ctx.manager)
+                    .stop_task(sid, &i.call.agent_id)
+                    .map_err(|e| err_text(&e));
+                stopped = r.is_ok();
+                r
+            }
             _ => Err("Session không chạy trong ccmon — không dừng được subagent".into()),
         },
+        Step::Escape => match &route {
+            // Check for a dialog first: Esc would dismiss it (a refusal).
+            Route::Tmux(p) => tmux::ensure_no_dialog(p)
+                .and_then(|_| tmux::send_escape(p))
+                .map(|_| std::thread::sleep(AFTER_ESCAPE))
+                .map_err(|e| tmux::error_text(&e)),
+            _ => Err("Session không chạy trong tmux — không gửi được Esc".into()),
+        },
         Step::Send(t) => send(ctx, &route, sid, t),
-        Step::MarkPaused => set_marker(sid, &i.call, true),
-        Step::Unmark => set_marker(sid, &i.call, false),
+        Step::MarkPaused => set_marker(sid, &i.call, true, stopped),
+        Step::Unmark => set_marker(sid, &i.call, false, false),
     })
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SwapCheck {
+    /// Swapping to this agent restarts ccmon's `-p` child (and stops the
+    /// session's other background tasks).
+    pub restart: bool,
+}
+
+/// Dry run of a swap to `agent`: whether it would restart the session.
+fn swap_check(ctx: &Ctx, key: &str, agent: &str) -> Result<SwapCheck, String> {
+    let i = info(ctx, key).ok_or(NO_CALL)?;
+    let file_mtime = swap_target(ctx, &i.sid, agent)?.as_deref().and_then(mtime);
+    let m = lock(&ctx.manager);
+    let restart = restart_needed(file_mtime, m.started(&i.sid), m.state(&i.sid))?;
+    Ok(SwapCheck { restart })
 }
 
 /// The main-thread call behind subagent node `key` (`a:<sid>:<agentId>`);
@@ -345,6 +443,17 @@ pub async fn get_subagent(
 ) -> Result<Option<SubagentDto>, String> {
     let c = Ctx::of(&state);
     blocking(move || subagent_dto(&c, &key)).await
+}
+
+/// Would swapping subagent `key` to `agent` restart the session?
+#[tauri::command]
+pub async fn subagent_swap_check(
+    state: State<'_, Shared>,
+    key: String,
+    agent: String,
+) -> Result<SwapCheck, String> {
+    let c = Ctx::of(&state);
+    blocking(move || swap_check(&c, &key, &agent)).await?
 }
 
 /// `action`: pause | resume | swap (with `agent`) | cancel.
@@ -465,6 +574,89 @@ mod tests {
         );
     }
 
+    fn fg() -> SubagentCall {
+        SubagentCall {
+            background: false,
+            ..call()
+        }
+    }
+
+    #[test]
+    fn foreground_agent_on_tmux_is_interrupted_with_escape() {
+        let p = |action: &str| {
+            plan_action(action, "running", false, Channel::Terminal, &fg(), "/t", None).unwrap()
+        };
+        // Esc interrupts main's turn and with it the agent: main is told it is stopped.
+        assert_eq!(
+            p("pause"),
+            vec![
+                Step::Escape,
+                Step::Send(pause_msg(&fg(), Channel::Managed)),
+                Step::MarkPaused
+            ]
+        );
+        assert_eq!(
+            p("cancel"),
+            vec![Step::Escape, Step::Send(cancel_msg(&fg(), Channel::Managed))]
+        );
+        // Managed: stop_task works on a foreground agent too (control.md).
+        assert_eq!(
+            plan_action("pause", "running", false, Channel::Managed, &fg(), "/t", None).unwrap()[0],
+            Step::StopTask
+        );
+        // Background agent on tmux: no Escape.
+        assert!(!plan("pause", "running", false, Channel::Terminal)
+            .unwrap()
+            .contains(&Step::Escape));
+    }
+
+    #[test]
+    fn resume_and_swap_wait_until_the_agent_stopped() {
+        for st in ["running", "idle"] {
+            for a in ["resume", "swap"] {
+                assert_eq!(
+                    plan(a, st, true, Channel::Terminal),
+                    Err(STILL_RUNNING.to_string()),
+                    "{a} {st}"
+                );
+            }
+            // Cancel stays possible.
+            assert!(plan("cancel", st, true, Channel::Terminal).is_ok());
+        }
+        assert_eq!(
+            STILL_RUNNING,
+            "Subagent vẫn đang chạy — chờ nó dừng hẳn rồi thử lại"
+        );
+        assert!(plan("resume", "error", true, Channel::Terminal).is_ok());
+    }
+
+    #[test]
+    fn marker_stopped_by_ccmon_reads_done() {
+        let m = |stopped| Paused {
+            call: call(),
+            at: 1,
+            stopped,
+        };
+        assert_eq!(effective_status("running", Some(&m(true))), "done");
+        assert_eq!(effective_status("running", Some(&m(false))), "running");
+        assert_eq!(effective_status("idle", None), "idle");
+        // A managed pause can be resumed at once; a terminal one waits.
+        let st = effective_status("running", Some(&m(true)));
+        assert!(plan("resume", st, true, Channel::Managed).is_ok());
+    }
+
+    #[test]
+    fn one_action_per_session_at_a_time() {
+        let g = InFlight::take("s-guard").unwrap();
+        assert_eq!(
+            InFlight::take("s-guard").err(),
+            Some("Đang xử lý thao tác trước, thử lại sau".to_string())
+        );
+        assert!(InFlight::take("s-other").is_ok());
+        drop(g);
+        assert!(InFlight::take("s-guard").is_ok());
+    }
+
     /// Runs steps with `fail` failing; returns the executed steps.
     fn run_with(steps: Vec<Step>, fail: fn(&Step) -> bool) -> (Result<(), String>, Vec<Step>) {
         let mut done = Vec::new();
@@ -504,6 +696,10 @@ mod tests {
         let t = plan("cancel", "running", false, Channel::Terminal).unwrap();
         let (_, done) = run_with(t, send);
         assert!(!done.contains(&Step::MarkPaused));
+        // Tmux foreground: Esc went through, message failed -> marker kept.
+        let f = plan_action("pause", "running", false, Channel::Terminal, &fg(), "/t", None).unwrap();
+        let (_, done) = run_with(f, send);
+        assert_eq!(done.last(), Some(&Step::MarkPaused));
         // Paused cancel: send fails -> keep the existing marker (no Unmark).
         let p = plan("cancel", "done", true, Channel::Managed).unwrap();
         let (_, done) = run_with(p, send);

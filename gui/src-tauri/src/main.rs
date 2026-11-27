@@ -221,6 +221,8 @@ struct LinkDto {
     status: Option<&'static str>,
     progress: Option<(usize, usize)>,
     report: Option<String>,
+    /// ccmon holds a pause marker for this subagent (`paused/<sid>.json`).
+    paused: bool,
 }
 
 /// Live text of the message a managed session is streaming (`draft` event).
@@ -374,6 +376,11 @@ fn get_tree(state: State<Shared>) -> Vec<TreeRowDto> {
 #[tauri::command]
 fn get_thread(state: State<Shared>, key: String, tail: Option<usize>) -> Option<ThreadDto> {
     let id = parse_key(&key)?;
+    // Read before taking the store lock (file IO).
+    let paused: BTreeSet<String> = cc_monitor::control::state::load_paused(id.session())
+        .into_iter()
+        .map(|p| p.call.agent_id)
+        .collect();
     let mut store = state.store.lock().unwrap();
     let now = discovery::now_ms();
     let rows: HashMap<NodeId, TreeRow> = store
@@ -469,6 +476,7 @@ fn get_thread(state: State<Shared>, key: String, tail: Option<usize>) -> Option<
                         status: r.map(|r| status_str(r.status)),
                         progress: r.and_then(|r| r.progress),
                         report,
+                        paused: matches!(&node, Some(NodeId::Agent(_, a)) if paused.contains(a)),
                     }
                 });
                 let (result_preview, has_more) = clip(&t.result, PREVIEW);
@@ -1061,7 +1069,8 @@ fn main() {
             cmd_control::stop_managed,
             cmd_control::list_projects,
             cmd_subagent::get_subagent,
-            cmd_subagent::subagent_action
+            cmd_subagent::subagent_action,
+            cmd_subagent::subagent_swap_check,
         ])
         .build(tauri::generate_context!())
         .expect("không khởi động được ccmon GUI")

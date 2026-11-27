@@ -92,12 +92,10 @@ pub fn block_reason(b: Block) -> &'static str {
 /// User-facing text for a `ControlDto::reason` code.
 pub fn reason_text(code: &str) -> String {
     match code {
-        "notInTmux" => "Session đang chạy ở terminal ngoài tmux — chỉ xem".into(),
+        "notInTmux" => "Session terminal không chạy trong tmux — chỉ xem".into(),
         "paneGone" => "Không tìm thấy pane tmux của session — chỉ xem".into(),
-        "notForeground" => {
-            "claude không ở foreground trong pane tmux (đang chạy lệnh khác?) — chỉ xem".into()
-        }
-        "unsupported" => "Không điều khiển được terminal trên hệ thống này — chỉ xem".into(),
+        "notForeground" => "Session không ở tiền cảnh trong pane tmux (bị Ctrl+Z hoặc đang chạy lệnh khác) — chỉ xem".into(),
+        "unsupported" => "Hệ điều hành này chưa hỗ trợ gửi vào terminal — chỉ xem".into(),
         "claudeNotFound" => err_text(&ControlError::ClaudeNotFound),
         _ => err_text(&ControlError::SessionLiveElsewhere),
     }
@@ -186,6 +184,16 @@ pub fn validate_overlay(o: &Overlay) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Launch settings only reach a session ccmon starts: refuse to change them
+/// while the session runs in another terminal (`elsewhere`).
+pub fn overlay_guard(elsewhere: bool) -> Result<(), String> {
+    if elsewhere {
+        Err("Session đang chạy ở terminal — không đổi cấu hình khởi động được".into())
+    } else {
+        Ok(())
+    }
 }
 
 /// Validate, save a session overlay and return what is now stored.
@@ -428,7 +436,7 @@ impl Ctx {
             // Live in a terminal: type into its tmux pane, checked right now.
             if let Some(l) = self.elsewhere(&sid) {
                 let p = tmux::check(&l).map_err(|b| reason_text(block_reason(b)))?;
-                tmux::send_text(&p, &text).map_err(|e| format!("Lỗi tmux: {e}"))?;
+                tmux::send_text(&p, &text).map_err(|e| tmux::error_text(&e))?;
                 return Ok(sid);
             }
             // The working directory comes from the store. Only a session ccmon
@@ -503,6 +511,7 @@ pub async fn set_overlay(
 ) -> Result<ControlDto, String> {
     let c = Ctx::of(&state);
     blocking(move || {
+        overlay_guard(c.elsewhere(&sid).is_some())?;
         persist_overlay(&state::state_dir(), &sid, &overlay)?;
         Ok(c.dto(Some(&sid)))
     })
@@ -918,6 +927,27 @@ mod tests {
         .unwrap();
         assert_eq!(transcript_cwd(&f), Some("/w/p".into()));
         assert_eq!(transcript_cwd(&d.path().join("none.jsonl")), None);
+    }
+
+    #[test]
+    fn overlay_refused_for_sessions_live_elsewhere() {
+        assert_eq!(
+            overlay_guard(true),
+            Err("Session đang chạy ở terminal — không đổi cấu hình khởi động được".to_string())
+        );
+        assert_eq!(overlay_guard(false), Ok(()));
+    }
+
+    #[test]
+    fn reason_texts_match_the_ui() {
+        assert_eq!(
+            reason_text("notForeground"),
+            "Session không ở tiền cảnh trong pane tmux (bị Ctrl+Z hoặc đang chạy lệnh khác) — chỉ xem"
+        );
+        assert_eq!(
+            reason_text("notInTmux"),
+            "Session terminal không chạy trong tmux — chỉ xem"
+        );
     }
 
     #[test]

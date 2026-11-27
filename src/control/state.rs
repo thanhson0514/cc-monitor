@@ -101,6 +101,11 @@ pub fn save_registry_in(dir: &Path, r: &Registry) -> io::Result<()> {
 pub struct Paused {
     pub call: super::subagent::SubagentCall,
     pub at: i64,
+    /// ccmon itself stopped the task (`stop_task` answered): the agent is
+    /// stopped even while its tree row still reads running. `false` when main
+    /// was only asked to stop it (terminal session).
+    #[serde(default)]
+    pub stopped: bool,
 }
 
 pub fn load_paused(sid: &str) -> Vec<Paused> {
@@ -265,6 +270,7 @@ mod tests {
                 background: false,
             },
             at: 5,
+            stopped: id == "a1",
         };
         let v = vec![mk("a1"), mk("a2")];
         save_paused_in(&d, "s-1", &v).unwrap();
@@ -274,5 +280,12 @@ mod tests {
         assert!(load_paused_in(&d, "s-1").is_empty());
         assert!(load_paused_in(&d, "../x").is_empty());
         assert!(save_paused_in(&d, "../x", &v).is_err());
+        // Markers written before `stopped` existed still load.
+        std::fs::write(
+            d.join("paused/s-2.json"),
+            r#"[{"call":{"agentId":"a","toolUseId":"t","agentType":"x","description":"","prompt":"","background":true},"at":1}]"#,
+        )
+        .unwrap();
+        assert!(!load_paused_in(&d, "s-2")[0].stopped);
     }
 }
