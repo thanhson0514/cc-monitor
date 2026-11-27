@@ -882,7 +882,7 @@ export default function App() {
                                       : row?.label ?? view?.title ?? 'ccmon'}
                             </span>
                             {row && !newCwd && !starting && <span className={`badge st-${row.status}`}>{row.status}</span>}
-                            {view?.kind === 'agent' && view.key === selected && !starting && !newCwd && <SubagentControl agentKey={view.key} />}
+                            {view?.kind === 'agent' && view.key === selected && !starting && !newCwd && <SubagentControl key={view.key} agentKey={view.key} />}
                             {!following && (
                                 <button
                                     className="follow-btn"

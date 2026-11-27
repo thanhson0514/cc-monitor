@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { AgentItem, api, SubagentAction, SubagentDto } from './api';
 import { AgentForm } from './Agents';
+import { LOCK_REASON } from './Composer';
 
 const RESTART_WARNING = 'Session sẽ khởi động lại để nạp agent mới (các tác vụ nền khác của session sẽ dừng).';
 
@@ -26,13 +27,28 @@ function SwapPicker({
     const [err, setErr] = useState<string | null>(null);
     const [tick, setTick] = useState(0);
 
+    const [projectReady, setProjectReady] = useState(!sid);
     useEffect(() => {
         if (!sid) return;
-        api.sessionProject(sid).then(setProject).catch(() => setProject(null));
+        let live = true;
+        api.sessionProject(sid)
+            .then((p) => live && setProject(p))
+            .catch(() => live && setProject(null))
+            .finally(() => live && setProjectReady(true));
+        return () => {
+            live = false;
+        };
     }, [sid]);
     useEffect(() => {
-        api.listAgents(sid, project, true).then(setAgents).catch(() => setAgents([]));
-    }, [sid, project, tick]);
+        if (!projectReady) return;
+        let live = true;
+        api.listAgents(sid, project, true)
+            .then((a) => live && setAgents(a))
+            .catch(() => live && setAgents([]));
+        return () => {
+            live = false;
+        };
+    }, [sid, project, projectReady, tick]);
 
     const list = useMemo(() => {
         const q = filter.trim().toLowerCase();
@@ -79,6 +95,7 @@ function SwapPicker({
                 </div>
             </div>
             {form && (
+                <div onClick={(e) => e.stopPropagation()}>
                 <AgentForm
                     initial={null}
                     project={project ?? ''}
@@ -90,6 +107,7 @@ function SwapPicker({
                         setTick((t) => t + 1);
                     }}
                 />
+                </div>
             )}
         </div>
     );
@@ -106,12 +124,20 @@ export function SubagentControl({ agentKey, compact }: { agentKey: string; compa
         api.subagent(agentKey).then(setDto).catch(() => setDto(null));
     }, [agentKey]);
     useEffect(() => {
-        load();
-        const un = listen('store-changed', load);
+        let live = true;
+        const fetchDto = () => {
+            api.subagent(agentKey)
+                .then((d) => live && setDto(d))
+                .catch(() => live && setDto(null));
+        };
+        setDto(null);
+        fetchDto();
+        const un = listen('store-changed', fetchDto);
         return () => {
+            live = false;
             un.then((f) => f());
         };
-    }, [load]);
+    }, [agentKey]);
 
     const run = (action: SubagentAction, agent?: string) => {
         setBusy(true);
@@ -128,22 +154,22 @@ export function SubagentControl({ agentKey, compact }: { agentKey: string; compa
     if (!dto) return null;
     const active = dto.status === 'running' || dto.status === 'idle';
     if (!active && !dto.paused) return null;
-    if (dto.channel === null) {
-        return (
-            <span className="sa-ctl sa-disabled" title={dto.reason ?? undefined}>
-                <button className="link-btn" type="button" disabled style={{ marginLeft: 0 }}>
-                    Dừng
-                </button>
-            </span>
-        );
-    }
     const cancel = () => {
         if (window.confirm('Hủy subagent này? Main thread sẽ coi nó là thất bại.')) act('cancel');
     };
     const cls = `sa-ctl${compact ? ' compact' : ''}`;
     return (
         <span className={cls}>
-            {dto.paused ? (
+            {dto.channel === null ? (
+                <>
+                    {dto.paused && <span className="badge">tạm dừng</span>}
+                    <span className="sa-disabled" title={LOCK_REASON[dto.reason ?? ''] ?? 'Không điều khiển được session này'}>
+                        <button className="link-btn" type="button" disabled>
+                            {dto.paused ? 'Tiếp tục' : 'Dừng'}
+                        </button>
+                    </span>
+                </>
+            ) : dto.paused ? (
                 <>
                     <span className="badge">tạm dừng</span>
                     <button className="link-btn" type="button" disabled={busy} title="Chạy lại cùng agent, tiếp tục từ chỗ đã dừng" onClick={() => act('resume')}>

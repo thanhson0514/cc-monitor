@@ -158,7 +158,7 @@ function AgentCard({ tool, onOpen }: { tool: ToolItem; onOpen: (key: string) => 
                     {STATE_ICON[status]} {status}
                     {link.progress ? ` · ${link.progress[0]}/${link.progress[1]}` : ''}
                 </span>
-                {link.kind === 'agent' && link.key && <SubagentControl agentKey={link.key} compact />}
+                {link.kind === 'agent' && link.key && status !== 'done' && <SubagentControl agentKey={link.key} compact />}
                 {link.key && (
                     <button className="link-btn" type="button" onClick={() => onOpen(link.key!)}>
                         Mở luồng →
