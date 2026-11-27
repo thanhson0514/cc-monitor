@@ -2,6 +2,8 @@ import { useState } from 'react';
 import hljs from 'highlight.js/lib/common';
 import { api, fmtDur, Item, ToolDetail } from './api';
 import { BgTaskView, YieldBody } from './BgTask';
+import { InlineImage, isImagePath, PathLink } from './open';
+import { matchPath } from './Markdown';
 
 export type ToolItem = Extract<Item, { type: 'tool' }>;
 
@@ -30,14 +32,15 @@ export function highlight(code: string, lang?: string): string {
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
 
-export function PathLabel({ path }: { path: string }) {
+export function PathLabel({ path, link }: { path: string; link?: boolean }) {
     const i = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-    return (
-        <span className="path" title={path}>
+    const label = (
+        <span className="path" title={link ? `${path}\nBấm để xem` : path}>
             {i >= 0 && <span className="path-dir">{path.slice(0, i + 1)}</span>}
             <span className="path-base">{path.slice(i + 1)}</span>
         </span>
     );
+    return link ? <PathLink path={path}>{label}</PathLink> : label;
 }
 
 export function Code({
@@ -75,6 +78,29 @@ export function Code({
     );
 }
 
+/** Plain tool output with absolute/home paths turned into viewer links. */
+function LinkedText({ text }: { text: string }) {
+    const out: React.ReactNode[] = [];
+    const re = /(^|[\s'"`(\[=:])((?:~|\/)[\w.@+\-\/]+|[A-Za-z]:\\[\w.@+\-\\]+)/g;
+    let last = 0;
+    for (let m = re.exec(text); m; m = re.exec(text)) {
+        const start = m.index + m[1].length;
+        const raw = matchPath(text.slice(start));
+        if (!raw) continue;
+        out.push(text.slice(last, start));
+        out.push(
+            <PathLink key={start} path={raw}>
+                {raw}
+            </PathLink>
+        );
+        last = start + raw.length;
+        re.lastIndex = last;
+    }
+    if (last === 0) return <>{text}</>;
+    out.push(text.slice(last));
+    return <>{out}</>;
+}
+
 function Output({ tool, threadKey }: { tool: ToolItem; threadKey: string }) {
     const [detail, setDetail] = useState<ToolDetail | null>(null);
     const [open, setOpen] = useState(false);
@@ -91,7 +117,9 @@ function Output({ tool, threadKey }: { tool: ToolItem; threadKey: string }) {
                 {tool.state === 'running' && !text ? (
                     <span className="muted">Đang chạy…</span>
                 ) : (
-                    <pre>{shown.join('\n')}</pre>
+                    <pre>
+                        <LinkedText text={shown.join('\n')} />
+                    </pre>
                 )}
                 {(more || open) && (
                     <button
@@ -243,7 +271,7 @@ export function ToolCard({ tool, threadKey, now }: { tool: ToolItem; threadKey: 
             const o = str(input.old_string) ?? '';
             const n = str(input.new_string) ?? '';
             const [a, r] = diffCounts(o, n);
-            title = path ? <PathLabel path={path} /> : tool.summary;
+            title = path ? <PathLabel path={path} link /> : tool.summary;
             badge = (
                 <span className="tbadge">
                     <span className="add">+{a}</span> <span className="del">−{r}</span>
@@ -256,7 +284,7 @@ export function ToolCard({ tool, threadKey, now }: { tool: ToolItem; threadKey: 
         }
         case 'MultiEdit': {
             const edits = (Array.isArray(input.edits) ? input.edits : []) as { old_string?: string; new_string?: string }[];
-            title = path ? <PathLabel path={path} /> : tool.summary;
+            title = path ? <PathLabel path={path} link /> : tool.summary;
             badge = <span className="tbadge">{edits.length} chỗ sửa</span>;
             body = edits.map((e, i) => <Diff key={i} oldS={e.old_string ?? ''} newS={e.new_string ?? ''} path={path ?? ''} />);
             showOutput = tool.state === 'error';
@@ -264,17 +292,21 @@ export function ToolCard({ tool, threadKey, now }: { tool: ToolItem; threadKey: 
         }
         case 'Write': {
             const content = str(input.content) ?? '';
-            title = path ? <PathLabel path={path} /> : tool.summary;
+            title = path ? <PathLabel path={path} link /> : tool.summary;
             badge = <span className="tbadge">{content.split('\n').length} dòng</span>;
             body = <Code code={content} lang={langOf(path ?? '')} maxLines={8} numbered />;
             showOutput = tool.state === 'error';
             break;
         }
         case 'Read': {
-            title = path ? <PathLabel path={path} /> : tool.summary;
+            title = path ? <PathLabel path={path} link /> : tool.summary;
             const off = input.offset as number | undefined;
             const lim = input.limit as number | undefined;
             if (off || lim) badge = <span className="tbadge">dòng {off ?? 1}–{(off ?? 1) + (lim ?? 0)}</span>;
+            if (path && isImagePath(path) && tool.state !== 'error') {
+                body = <InlineImage path={path} />;
+                showOutput = false;
+            }
             break;
         }
         case 'Grep':
@@ -282,7 +314,12 @@ export function ToolCard({ tool, threadKey, now }: { tool: ToolItem; threadKey: 
             title = (
                 <span>
                     <code className="pattern">{str(input.pattern)}</code>
-                    {str(input.path) && <span className="muted"> trong {str(input.path)}</span>}
+                    {str(input.path) && (
+                        <span className="muted">
+                            {' '}
+                            trong <PathLabel path={str(input.path)!} link />
+                        </span>
+                    )}
                     {str(input.glob) && <span className="muted"> · {str(input.glob)}</span>}
                 </span>
             );
@@ -297,13 +334,13 @@ export function ToolCard({ tool, threadKey, now }: { tool: ToolItem; threadKey: 
         }
         case 'Patch': {
             const files = (Array.isArray(input.files) ? input.files : []) as string[];
-            title = files.length === 1 ? <PathLabel path={files[0]} /> : `${files.length} file`;
+            title = files.length === 1 ? <PathLabel path={files[0]} link /> : `${files.length} file`;
             body =
                 files.length > 1 ? (
                     <ul className="todos">
                         {files.map((f) => (
                             <li key={f}>
-                                <PathLabel path={f} />
+                                <PathLabel path={f} link />
                             </li>
                         ))}
                     </ul>

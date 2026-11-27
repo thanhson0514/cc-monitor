@@ -498,6 +498,22 @@ fn mime(path: &str) -> &'static str {
     }
 }
 
+/// A path as written in a transcript: `~/x` is under the home directory, a
+/// relative path is under `base` (the session cwd).
+pub fn resolve_path(path: &str, base: Option<&str>) -> String {
+    if let Some(rest) = path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
+        return cc_monitor::platform::home()
+            .join(rest)
+            .display()
+            .to_string();
+    }
+    let p = Path::new(path);
+    match base {
+        Some(b) if p.is_relative() && !b.is_empty() => Path::new(b).join(p).display().to_string(),
+        _ => path.to_string(),
+    }
+}
+
 pub fn preview(path: &str) -> Preview {
     let mut p = Preview {
         kind: "missing",

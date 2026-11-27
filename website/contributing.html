@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title data-vi="Đóng góp — ccmon">Contributing — ccmon</title>
+  <meta name="description" content="Developer guide for ccmon: repository layout, prerequisites, build and test commands, architecture, conventions, pull requests and releases." />
+  <link rel="canonical" href="https://cc-monitor.online/contributing.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://cc-monitor.online/contributing.html" />
+  <meta property="og:title" content="Contributing — ccmon" />
+  <meta property="og:description" content="Developer guide for ccmon: repository layout, prerequisites, build and test commands, architecture, conventions, pull requests and releases." />
+  <meta property="og:image" content="https://cc-monitor.online/assets/screen-main.png" />
+  <link rel="icon" href="assets/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/site.css" />
+  <link rel="stylesheet" href="assets/docs.css" />
+  <script src="assets/docs.js"></script>
+</head>
+<body>
+  <!-- Generated layout: keep the nav, sidebar and footer in sync across the docs pages. -->
+  <nav>
+    <div class="wrap">
+      <a class="logo" href="index.html"><img src="assets/logo.png" alt="" /> ccmon</a>
+      <div class="links">
+        <a class="hide-sm" href="index.html"><span class="l-en">Home</span><span class="l-vi">Trang chủ</span></a>
+        <a href="docs.html"><span class="l-en">Docs</span><span class="l-vi">Tài liệu</span></a>
+        <a class="hide-sm" href="contributing.html" class="on"><span class="l-en">Contributing</span><span class="l-vi">Đóng góp</span></a>
+        <a href="https://github.com/wik1ngst-1103/cc-monitor">GitHub</a>
+        <div class="lang"><button data-lang="en" class="on">EN</button><button data-lang="vi">VI</button></div>
+      </div>
+    </div>
+  </nav>
+
+  <header class="doc-hero">
+    <div class="wrap">
+      <div class="eyebrow"><span class="l-en">Open source</span><span class="l-vi">Mã nguồn mở</span></div>
+      <h1><span class="l-en">Contributing to ccmon</span><span class="l-vi">Đóng góp cho ccmon</span></h1>
+      <p class="lead"><span class="l-en">How the repository is laid out, how to build and test it, how the code is organised, and how changes and releases get made.</span><span class="l-vi">Repo được tổ chức thế nào, build và kiểm thử ra sao, code được sắp xếp thế nào, và thay đổi cũng như bản phát hành được làm như thế nào.</span></p>
+    </div>
+  </header>
+
+  <div class="wrap doc-layout">
+    <aside class="doc-side" aria-label="Documentation">
+      <div class="grp">
+        <div class="grp-t"><span class="l-en">Pages</span><span class="l-vi">Các trang</span></div>
+        <div class="lst">
+        <a href="docs.html"><span class="l-en">User guide</span><span class="l-vi">Hướng dẫn sử dụng</span></a>
+        <a href="contributing.html" class="on" aria-current="page"><span class="l-en">Contributing</span><span class="l-vi">Đóng góp</span></a>
+        <a href="privacy.html"><span class="l-en">Privacy</span><span class="l-vi">Quyền riêng tư</span></a>
+        <a href="security.html"><span class="l-en">Security</span><span class="l-vi">Bảo mật</span></a>
+        <a href="code-of-conduct.html"><span class="l-en">Code of conduct</span><span class="l-vi">Quy tắc ứng xử</span></a>
+        <a href="license.html"><span class="l-en">License</span><span class="l-vi">Giấy phép</span></a>
+        </div>
+      </div>
+      <div class="grp toc">
+        <div class="grp-t"><span class="l-en">On this page</span><span class="l-vi">Trong trang này</span></div>
+        <div class="lst">
+        <a href="#welcome"><span class="l-en">Welcome</span><span class="l-vi">Chào mừng</span></a>
+        <a href="#layout"><span class="l-en">Repository layout</span><span class="l-vi">Cấu trúc repo</span></a>
+        <a href="#setup"><span class="l-en">Prerequisites</span><span class="l-vi">Yêu cầu</span></a>
+        <a href="#build"><span class="l-en">Build, run &amp; test</span><span class="l-vi">Build, chạy &amp; kiểm thử</span></a>
+        <a href="#architecture"><span class="l-en">Architecture</span><span class="l-vi">Kiến trúc</span></a>
+        <a href="#conventions"><span class="l-en">Principles &amp; conventions</span><span class="l-vi">Nguyên tắc &amp; quy ước</span></a>
+        <a href="#prs"><span class="l-en">Commits &amp; pull requests</span><span class="l-vi">Commit &amp; pull request</span></a>
+        <a href="#issues"><span class="l-en">Bugs &amp; feature requests</span><span class="l-vi">Báo lỗi &amp; đề xuất</span></a>
+        <a href="#release"><span class="l-en">Release process</span><span class="l-vi">Quy trình phát hành</span></a>
+        </div>
+      </div>
+    </aside>
+
+    <main class="prose">
+<section id="welcome" data-en="Welcome" data-vi="Chào mừng">
+  <h2><span class="l-en">Welcome</span><span class="l-vi">Chào mừng</span></h2>
+  <div class="l-en">
+    <p>Thanks for helping! ccmon is MIT-licensed: you may use, modify, redistribute and sell it. To keep one shared source of truth, <b>changes to the code go through the <a href="https://github.com/wik1ngst-1103/cc-monitor">GitHub repository</a></b>. Everyone taking part is expected to follow the <a href="code-of-conduct.html">Code of Conduct</a>.</p>
+    <div class="cards2">
+      <div class="card"><h3>Found a bug or have an idea?</h3><p>Open an <a href="#issues">issue</a>. Search first, and include your OS, ccmon version and Claude Code version.</p></div>
+      <div class="card"><h3>Want to change code?</h3><p><a href="https://github.com/wik1ngst-1103/cc-monitor/fork">Fork</a>, branch, and open a <a href="#prs">pull request</a> against <code>main</code>. For larger changes, open an issue first so we can agree on the approach.</p></div>
+    </div>
+    <p>Security problems are the exception: please <b>do not</b> open a public issue — follow the <a href="security.html">Security policy</a> instead.</p>
+  </div>
+  <div class="l-vi">
+    <p>Cảm ơn bạn đã giúp! ccmon dùng giấy phép MIT: bạn được dùng, sửa, phân phối lại và bán. Để giữ một nguồn chung duy nhất, <b>mọi thay đổi code đi qua <a href="https://github.com/wik1ngst-1103/cc-monitor">repo trên GitHub</a></b>. Mọi người tham gia cần tuân theo <a href="code-of-conduct.html">Quy tắc ứng xử</a>.</p>
+    <div class="cards2">
+      <div class="card"><h3>Gặp lỗi hay có ý tưởng?</h3><p>Mở một <a href="#issues">issue</a>. Tìm trước, và ghi kèm hệ điều hành, phiên bản ccmon và phiên bản Claude Code.</p></div>
+      <div class="card"><h3>Muốn sửa code?</h3><p><a href="https://github.com/wik1ngst-1103/cc-monitor/fork">Fork</a>, tạo nhánh, rồi mở <a href="#prs">pull request</a> vào <code>main</code>. Với thay đổi lớn, hãy mở issue trước để thống nhất cách làm.</p></div>
+    </div>
+    <p>Riêng lỗ hổng bảo mật: vui lòng <b>không</b> mở issue công khai — hãy làm theo <a href="security.html">Chính sách bảo mật</a>.</p>
+  </div>
+</section>
+
+<section id="layout" data-en="Repository layout" data-vi="Cấu trúc repo">
+  <h2><span class="l-en">Repository layout</span><span class="l-vi">Cấu trúc repo</span></h2>
+  <div class="l-en"><p>A Cargo workspace with two crates (the root crate <code>cc-monitor</code> and <code>gui/src-tauri</code>), plus the React frontend and the website.</p></div>
+  <div class="l-vi"><p>Một Cargo workspace gồm hai crate (crate gốc <code>cc-monitor</code> và <code>gui/src-tauri</code>), cùng frontend React và website.</p></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th><span class="l-en">Path</span><span class="l-vi">Đường dẫn</span></th><th><span class="l-en">What</span><span class="l-vi">Là gì</span></th></tr></thead>
+    <tbody>
+      <tr><td><code>src/</code></td><td class="wrap-ok"><span class="l-en">Core library <code>cc_monitor</code> (transcript parser, live store, catalog, control) and the TUI binary <code>ccmon</code> (<code>main.rs</code>, <code>app.rs</code>, <code>ui.rs</code>).</span><span class="l-vi">Thư viện lõi <code>cc_monitor</code> (parser transcript, store trực tiếp, catalog, control) và binary TUI <code>ccmon</code> (<code>main.rs</code>, <code>app.rs</code>, <code>ui.rs</code>).</span></td></tr>
+      <tr><td><code>src/catalog/</code></td><td class="wrap-ok"><span class="l-en">What exists on disk and what a session used: skills, plugins, MCP, agents, workflows, run history.</span><span class="l-vi">Những gì có trên đĩa và session đã dùng gì: skill, plugin, MCP, agent, workflow, lịch sử chạy.</span></td></tr>
+      <tr><td><code>src/control/</code></td><td class="wrap-ok"><span class="l-en">Per-session overlays → <code>claude</code> CLI flags, ccmon state files, the managed-session runner.</span><span class="l-vi">Overlay theo session → cờ CLI của <code>claude</code>, file trạng thái của ccmon, bộ chạy session.</span></td></tr>
+      <tr><td><code>gui/src-tauri/</code></td><td class="wrap-ok"><span class="l-en">Desktop backend (Tauri 2): commands for tree, threads, changes/diff, catalog, control, agents.</span><span class="l-vi">Backend desktop (Tauri 2): các command cho cây, luồng, thay đổi/diff, catalog, control, agent.</span></td></tr>
+      <tr><td><code>gui/ui/</code></td><td class="wrap-ok"><span class="l-en">Desktop frontend (React 18 + Vite + TypeScript).</span><span class="l-vi">Frontend desktop (React 18 + Vite + TypeScript).</span></td></tr>
+      <tr><td><code>docs/architecture/</code></td><td class="wrap-ok"><span class="l-en">Architecture notes (see <a href="#architecture">below</a>).</span><span class="l-vi">Ghi chú kiến trúc (xem <a href="#architecture">bên dưới</a>).</span></td></tr>
+      <tr><td><code>demo/</code></td><td class="wrap-ok"><span class="l-en">Demo data generator for screenshots and CI smoke tests.</span><span class="l-vi">Bộ sinh dữ liệu demo cho ảnh chụp và smoke test của CI.</span></td></tr>
+      <tr><td><code>website/</code></td><td class="wrap-ok"><span class="l-en">This site: static HTML deployed to GitHub Pages (<a href="https://cc-monitor.online">cc-monitor.online</a>), no build step.</span><span class="l-vi">Website này: HTML tĩnh triển khai lên GitHub Pages (<a href="https://cc-monitor.online">cc-monitor.online</a>), không cần build.</span></td></tr>
+      <tr><td><code>.github/</code></td><td class="wrap-ok"><span class="l-en">CI, release and Pages workflows; issue and PR templates.</span><span class="l-vi">Workflow CI, phát hành và Pages; mẫu issue và PR.</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="setup" data-en="Prerequisites" data-vi="Yêu cầu">
+  <h2><span class="l-en">Prerequisites</span><span class="l-vi">Yêu cầu</span></h2>
+  <div class="l-en"><ul>
+    <li><b>Rust</b> stable (CI uses <code>dtolnay/rust-toolchain@stable</code>).</li>
+    <li><b>Node.js 20+</b> and <b>Yarn 1.x</b> for the frontend.</li>
+    <li>The <a href="https://tauri.app/start/prerequisites/">Tauri prerequisites</a> for your OS. On Ubuntu:</li>
+  </ul></div>
+  <div class="l-vi"><ul>
+    <li><b>Rust</b> stable (CI dùng <code>dtolnay/rust-toolchain@stable</code>).</li>
+    <li><b>Node.js 20+</b> và <b>Yarn 1.x</b> cho frontend.</li>
+    <li><a href="https://tauri.app/start/prerequisites/">Các yêu cầu của Tauri</a> cho hệ điều hành của bạn. Trên Ubuntu:</li>
+  </ul></div>
+<pre><code>sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf</code></pre>
+  <div class="l-en"><p>Python 3 is only needed for the demo data generator. Without sudo, <code>gui/build.sh</code> can take WebKitGTK/GTK headers from extracted <code>-dev</code> packages in <code>~/.local/sysroot</code> (or <code>$CCMON_SYSROOT</code>).</p></div>
+  <div class="l-vi"><p>Python 3 chỉ cần cho bộ sinh dữ liệu demo. Không có sudo, <code>gui/build.sh</code> có thể lấy header WebKitGTK/GTK từ các gói <code>-dev</code> đã giải nén trong <code>~/.local/sysroot</code> (hoặc <code>$CCMON_SYSROOT</code>).</p></div>
+</section>
+
+<section id="build" data-en="Build, run &amp; test" data-vi="Build, chạy &amp; kiểm thử">
+  <h2><span class="l-en">Build, run &amp; test</span><span class="l-vi">Build, chạy &amp; kiểm thử</span></h2>
+<pre><code>git clone https://github.com/&lt;you&gt;/cc-monitor &amp;&amp; cd cc-monitor
+cargo test --workspace              <span class="c"># core + GUI backend tests</span>
+./gui/build.sh                      <span class="c"># yarn install + build the frontend, then target/release/ccmon-gui</span>
+cargo run --release -p cc-monitor   <span class="c"># terminal UI</span>
+(cd gui/ui &amp;&amp; yarn typecheck)       <span class="c"># TypeScript check (also part of `yarn build`)</span></code></pre>
+  <div class="l-en">
+    <p>The desktop binary embeds the built frontend from <code>gui/ui/dist</code>, so after changing anything in <code>gui/ui/src</code> rebuild with <code>./gui/build.sh</code> (or <code>cd gui/ui &amp;&amp; yarn build</code> followed by <code>cargo build --release -p ccmon-gui</code>). Installers are produced by the Tauri CLI in the release workflow; you don't need them for development.</p>
+    <h3 id="demo">Work on fake data</h3>
+    <p>Never develop against (or attach) your real transcripts — they contain private code and prompts. Generate a demo dataset instead:</p>
+  </div>
+  <div class="l-vi">
+    <p>Binary desktop nhúng frontend đã build từ <code>gui/ui/dist</code>, nên sau khi sửa gì trong <code>gui/ui/src</code> hãy build lại bằng <code>./gui/build.sh</code> (hoặc <code>cd gui/ui &amp;&amp; yarn build</code> rồi <code>cargo build --release -p ccmon-gui</code>). Bộ cài do Tauri CLI tạo trong workflow phát hành; khi phát triển không cần đến.</p>
+    <h3 id="demo-vi">Làm việc trên dữ liệu giả</h3>
+    <p>Đừng phát triển trên (hay đính kèm) transcript thật — chúng chứa code và prompt riêng tư. Hãy tạo bộ dữ liệu demo:</p>
+  </div>
+<pre><code>python3 demo/make_demo.py /tmp/ccmon-demo
+<span class="c"># prints {"CCMON_CLAUDE_DIR": …, "CCMON_CACHE_DIR": …, "CCMON_CONFIG": …} as JSON;</span>
+<span class="c"># export those variables, then start target/release/ccmon-gui or ccmon</span></code></pre>
+
+  <h3 id="ci"><span class="l-en">What CI checks</span><span class="l-vi">CI kiểm tra gì</span></h3>
+  <div class="l-en"><p><code>.github/workflows/ci.yml</code> runs on every push to <code>main</code> and every pull request, on <b>ubuntu-22.04</b> and <b>windows-latest</b>:</p>
+  <ol>
+    <li><b>Test</b> — <code>yarn install --frozen-lockfile &amp;&amp; yarn build</code> in <code>gui/ui</code> (TypeScript check + Vite build), then <code>cargo test --workspace</code>.</li>
+    <li><b>Smoke test</b> — release build of <code>ccmon-gui</code> and <code>ccmon</code>, a <code>ccmon tee</code> round trip, then the desktop app is started on demo data and a screenshot is checked to be non-blank.</li>
+  </ol>
+  <p>CI does not run <code>cargo fmt --check</code> or <code>cargo clippy</code>; formatting is part of the <a href="#prs">PR checklist</a> instead. If you change <code>gui/ui/package.json</code>, commit the updated <code>yarn.lock</code> — CI installs with <code>--frozen-lockfile</code>.</p></div>
+  <div class="l-vi"><p><code>.github/workflows/ci.yml</code> chạy ở mỗi lần push vào <code>main</code> và mỗi pull request, trên <b>ubuntu-22.04</b> và <b>windows-latest</b>:</p>
+  <ol>
+    <li><b>Test</b> — <code>yarn install --frozen-lockfile &amp;&amp; yarn build</code> trong <code>gui/ui</code> (kiểm tra TypeScript + build Vite), rồi <code>cargo test --workspace</code>.</li>
+    <li><b>Smoke test</b> — build release <code>ccmon-gui</code> và <code>ccmon</code>, thử một vòng <code>ccmon tee</code>, rồi mở ứng dụng desktop trên dữ liệu demo và kiểm tra ảnh chụp màn hình không trắng trơn.</li>
+  </ol>
+  <p>CI không chạy <code>cargo fmt --check</code> hay <code>cargo clippy</code>; định dạng code nằm trong <a href="#prs">checklist PR</a>. Nếu sửa <code>gui/ui/package.json</code>, hãy commit cả <code>yarn.lock</code> đã cập nhật — CI cài với <code>--frozen-lockfile</code>.</p></div>
+</section>
+
+<section id="architecture" data-en="Architecture" data-vi="Kiến trúc">
+  <h2><span class="l-en">Architecture overview</span><span class="l-vi">Tổng quan kiến trúc</span></h2>
+<pre><code>Claude Code ──writes──► ~/.claude/projects/…/&lt;session&gt;.jsonl            ccmon (read-only)
+             (+ sub-agent &amp; workflow transcripts, file backups) ─► tail every 200 ms ─► thread tree ─► UI
+                                                                   parse tolerantly</code></pre>
+  <div class="l-en">
+    <p>A background worker (<code>discovery.rs</code>) finds sessions and tails new lines (<code>tail.rs</code>, about 0.4 s end to end). <code>event.rs</code> turns each JSONL line into an event; <code>thread.rs</code> and <code>store.rs</code> rebuild the live branch of each thread (rewinds and <code>/compact</code> included). The code is organised in three layers:</p>
+    <ul>
+      <li><b>Observe</b> — parse and store; never writes. Unknown lines become a generic event, parsing never panics. Background tasks are tracked in <code>bgtask.rs</code>.</li>
+      <li><b>Catalog</b> (<code>src/catalog/</code>) — “what exists” (providers scanning disk, one per kind: skill, plugin, MCP, agent, workflow) and “what was available / used” in a session (<code>usage.rs</code>), plus run history.</li>
+      <li><b>Control</b> (<code>src/control/</code>) — “what may the next turn use”: a per-session <code>Overlay</code> is translated into <code>claude</code> CLI flags (<code>--model</code>, <code>--effort</code>, <code>--permission-mode</code>, <code>--agent</code>, <code>--disallowedTools</code>, <code>--settings</code>) and a long-lived <code>claude -p</code> child is managed by <code>runner.rs</code>. It only writes ccmon-owned state.</li>
+    </ul>
+    <p>The Tauri backend exposes these as commands (<code>gui/src-tauri/src/*.rs</code>, registered in <code>main.rs</code>); their DTOs are mirrored in <code>gui/ui/src/api.ts</code>. Read the full notes in the repository:</p>
+    <ul>
+      <li><a href="https://github.com/wik1ngst-1103/cc-monitor/blob/main/docs/architecture/capabilities.md">capabilities.md</a> — the three layers, the provider contract, state conventions and a step-by-step checklist for adding a new capability kind.</li>
+      <li><a href="https://github.com/wik1ngst-1103/cc-monitor/blob/main/docs/architecture/control.md">control.md</a> — the verified mapping from overlay fields to Claude Code CLI flags, binary lookup and limitations.</li>
+    </ul>
+  </div>
+  <div class="l-vi">
+    <p>Một worker chạy nền (<code>discovery.rs</code>) tìm session và đọc dòng mới (<code>tail.rs</code>, trễ khoảng 0,4 giây). <code>event.rs</code> biến mỗi dòng JSONL thành một sự kiện; <code>thread.rs</code> và <code>store.rs</code> dựng lại nhánh đang sống của từng luồng (kể cả rewind và <code>/compact</code>). Code chia thành ba lớp:</p>
+    <ul>
+      <li><b>Observe</b> — parse và lưu; không bao giờ ghi. Dòng lạ thành sự kiện chung, parse không bao giờ panic. Tác vụ nền được theo dõi trong <code>bgtask.rs</code>.</li>
+      <li><b>Catalog</b> (<code>src/catalog/</code>) — “có những gì” (provider quét đĩa, mỗi loại một provider: skill, plugin, MCP, agent, workflow) và “session đã được cung cấp / đã dùng gì” (<code>usage.rs</code>), cùng lịch sử chạy.</li>
+      <li><b>Control</b> (<code>src/control/</code>) — “lượt sau được dùng gì”: <code>Overlay</code> theo session được dịch thành cờ CLI của <code>claude</code> (<code>--model</code>, <code>--effort</code>, <code>--permission-mode</code>, <code>--agent</code>, <code>--disallowedTools</code>, <code>--settings</code>) và một tiến trình con <code>claude -p</code> sống lâu do <code>runner.rs</code> quản lý. Lớp này chỉ ghi trạng thái của chính ccmon.</li>
+    </ul>
+    <p>Backend Tauri đưa các lớp này ra thành command (<code>gui/src-tauri/src/*.rs</code>, đăng ký trong <code>main.rs</code>); DTO tương ứng nằm trong <code>gui/ui/src/api.ts</code>. Ghi chú đầy đủ trong repo (tiếng Anh):</p>
+    <ul>
+      <li><a href="https://github.com/wik1ngst-1103/cc-monitor/blob/main/docs/architecture/capabilities.md">capabilities.md</a> — ba lớp, hợp đồng provider, quy ước trạng thái và checklist từng bước để thêm một loại capability mới.</li>
+      <li><a href="https://github.com/wik1ngst-1103/cc-monitor/blob/main/docs/architecture/control.md">control.md</a> — ánh xạ đã kiểm chứng từ overlay sang cờ CLI của Claude Code, cách tìm binary và các giới hạn.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="conventions" data-en="Principles &amp; conventions" data-vi="Nguyên tắc &amp; quy ước">
+  <h2><span class="l-en">Principles &amp; conventions</span><span class="l-vi">Nguyên tắc &amp; quy ước</span></h2>
+  <div class="l-en">
+    <h3>Principles</h3>
+    <ul>
+      <li><b>Read-only.</b> ccmon never writes into <code>~/.claude</code>, except the explicit, opt-in status-line wrapper (with backup and an uninstall button) and agent files the user saves from the Agents page after confirming.</li>
+      <li><b>Local only.</b> No network calls, no telemetry.</li>
+      <li><b>Tolerant parsing.</b> The transcript format is internal to Claude Code and changes; unknown lines must be skipped, never crash the app.</li>
+    </ul>
+    <h3>Conventions in the code</h3>
+    <ul>
+      <li>Format Rust with <code>cargo fmt --all</code>.</li>
+      <li>New parsing behaviour gets a test with a <b>small, hand-written fixture</b>. Never paste real transcripts.</li>
+      <li>Catalog providers follow the contract in <code>capabilities.md</code>: stable ids (never derived from a path or index), no IO outside <code>ScanCtx</code>, no network, never panic — missing or malformed files yield fewer items, not errors.</li>
+      <li>ccmon state is written atomically (temp file + rename); reads fall back to defaults on missing or corrupt files; any path built from a session id is validated first.</li>
+      <li>Code must work on both Linux and Windows (CI tests both): use the helpers in <code>src/platform.rs</code> for paths, shells and processes.</li>
+      <li>UI strings are currently Vietnamese; an English UI is planned, and help with it is welcome.</li>
+    </ul>
+  </div>
+  <div class="l-vi">
+    <h3>Nguyên tắc</h3>
+    <ul>
+      <li><b>Chỉ đọc.</b> ccmon không bao giờ ghi vào <code>~/.claude</code>, trừ lớp bọc status line do người dùng chủ động chọn (có sao lưu và nút gỡ) và file agent người dùng lưu từ trang Agents sau khi xác nhận.</li>
+      <li><b>Chỉ cục bộ.</b> Không gọi mạng, không telemetry.</li>
+      <li><b>Parse khoan dung.</b> Định dạng transcript là nội bộ của Claude Code và thay đổi; dòng lạ phải được bỏ qua, không bao giờ làm sập ứng dụng.</li>
+    </ul>
+    <h3>Quy ước trong code</h3>
+    <ul>
+      <li>Định dạng Rust bằng <code>cargo fmt --all</code>.</li>
+      <li>Hành vi parse mới phải có test với <b>fixture nhỏ, viết tay</b>. Không bao giờ dán transcript thật.</li>
+      <li>Provider của catalog tuân theo hợp đồng trong <code>capabilities.md</code>: id ổn định (không suy ra từ đường dẫn hay chỉ số), không IO ngoài <code>ScanCtx</code>, không gọi mạng, không panic — file thiếu hoặc hỏng chỉ cho ít mục hơn, không báo lỗi.</li>
+      <li>Trạng thái của ccmon được ghi nguyên tử (file tạm + rename); khi đọc, file thiếu hoặc hỏng thì dùng mặc định; mọi đường dẫn tạo từ session id đều được kiểm tra trước.</li>
+      <li>Code phải chạy được trên cả Linux và Windows (CI kiểm tra cả hai): dùng các hàm trong <code>src/platform.rs</code> cho đường dẫn, shell và tiến trình.</li>
+      <li>Chuỗi giao diện hiện là tiếng Việt; giao diện tiếng Anh đang được lên kế hoạch, rất hoan nghênh giúp đỡ.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="prs" data-en="Commits &amp; pull requests" data-vi="Commit &amp; pull request">
+  <h2><span class="l-en">Commits &amp; pull requests</span><span class="l-vi">Commit &amp; pull request</span></h2>
+  <div class="l-en">
+    <ol>
+      <li>Fork the repository and create a branch from <code>main</code> (e.g. <code>fix/windows-paths</code>, <code>feat/…</code>).</li>
+      <li>Keep each PR focused on one change. For anything large, agree on the approach in an issue first.</li>
+      <li>Commit messages follow the style already in the history — a <a href="https://www.conventionalcommits.org/">Conventional Commits</a>-like prefix with an optional scope, e.g. <code>feat(gui): highlighted @agent mentions</code>, <code>fix(catalog): …</code>, <code>docs: …</code>, <code>style: cargo fmt</code>.</li>
+      <li>Open the pull request against <code>main</code> and fill in the template: <b>What &amp; why</b> and <b>How I tested</b>.</li>
+    </ol>
+    <h3>Pull request checklist</h3>
+    <ul>
+      <li><code>cargo test --workspace</code> passes, and <code>cd gui/ui &amp;&amp; yarn typecheck</code> passes</li>
+      <li><code>cargo fmt --all</code> applied</li>
+      <li>New parsing behaviour has a test with a small fixture (never real transcripts: they contain private code and prompts)</li>
+      <li>UI changes include a screenshot in the PR description</li>
+    </ul>
+    <p>CI runs on every pull request; please make sure it passes before asking for review. The project is <a href="license.html">MIT-licensed</a>, and contributions are expected to be submitted under the same license.</p>
+  </div>
+  <div class="l-vi">
+    <ol>
+      <li>Fork repo và tạo nhánh từ <code>main</code> (ví dụ <code>fix/windows-paths</code>, <code>feat/…</code>).</li>
+      <li>Mỗi PR chỉ tập trung một thay đổi. Việc lớn thì thống nhất cách làm trong issue trước.</li>
+      <li>Commit message theo phong cách sẵn có trong lịch sử — tiền tố kiểu <a href="https://www.conventionalcommits.org/">Conventional Commits</a> kèm phạm vi tuỳ chọn, ví dụ <code>feat(gui): highlighted @agent mentions</code>, <code>fix(catalog): …</code>, <code>docs: …</code>, <code>style: cargo fmt</code>.</li>
+      <li>Mở pull request vào <code>main</code> và điền mẫu: <b>What &amp; why</b> và <b>How I tested</b>.</li>
+    </ol>
+    <h3>Checklist cho pull request</h3>
+    <ul>
+      <li><code>cargo test --workspace</code> qua, và <code>cd gui/ui &amp;&amp; yarn typecheck</code> qua</li>
+      <li>Đã chạy <code>cargo fmt --all</code></li>
+      <li>Hành vi parse mới có test với fixture nhỏ (không dùng transcript thật: chúng chứa code và prompt riêng tư)</li>
+      <li>Thay đổi giao diện có ảnh chụp trong mô tả PR</li>
+    </ul>
+    <p>CI chạy trên mọi pull request; hãy bảo đảm nó qua trước khi nhờ review. Dự án dùng <a href="license.html">giấy phép MIT</a>, và phần đóng góp được hiểu là gửi theo cùng giấy phép đó.</p>
+  </div>
+</section>
+
+<section id="issues" data-en="Bugs &amp; feature requests" data-vi="Báo lỗi &amp; đề xuất">
+  <h2><span class="l-en">Reporting bugs &amp; requesting features</span><span class="l-vi">Báo lỗi &amp; đề xuất tính năng</span></h2>
+  <div class="l-en">
+    <p>Use the <a href="https://github.com/wik1ngst-1103/cc-monitor/issues/new/choose">issue forms</a>. Search existing issues first.</p>
+    <ul>
+      <li><b>Bug report</b> — ccmon version and operating system (required), Claude Code version (<code>claude --version</code>), what happened and what you expected (steps to reproduce help a lot), screenshots or logs.</li>
+      <li><b>Feature request</b> — the problem it would solve (required) and your idea.</li>
+    </ul>
+    <div class="callout warn"><p><b>Remove private code and prompts</b> from screenshots and logs before posting. Do not attach real transcripts.</p></div>
+  </div>
+  <div class="l-vi">
+    <p>Dùng <a href="https://github.com/wik1ngst-1103/cc-monitor/issues/new/choose">mẫu issue</a>. Hãy tìm trong các issue có sẵn trước.</p>
+    <ul>
+      <li><b>Bug report</b> — phiên bản ccmon và hệ điều hành (bắt buộc), phiên bản Claude Code (<code>claude --version</code>), chuyện gì xảy ra và bạn mong đợi gì (các bước tái hiện giúp rất nhiều), ảnh chụp hoặc log.</li>
+      <li><b>Feature request</b> — vấn đề cần giải quyết (bắt buộc) và ý tưởng của bạn.</li>
+    </ul>
+    <div class="callout warn"><p><b>Xoá code và prompt riêng tư</b> khỏi ảnh chụp và log trước khi đăng. Không đính kèm transcript thật.</p></div>
+  </div>
+</section>
+
+<section id="release" data-en="Release process" data-vi="Quy trình phát hành">
+  <h2><span class="l-en">Release process</span><span class="l-vi">Quy trình phát hành</span></h2>
+  <div class="l-en">
+    <p>Releases are automated by <code>.github/workflows/release.yml</code>:</p>
+    <ol>
+      <li>Bump the version in a PR. The workflow reads <code>version</code> from the root <code>Cargo.toml</code>; keep <code>gui/src-tauri/Cargo.toml</code> and <code>gui/src-tauri/tauri.conf.json</code> (which names the installer files) at the same version.</li>
+      <li>Merge to <code>main</code>. If no tag <code>v&lt;version&gt;</code> exists yet, the workflow tags <code>HEAD</code> and creates a <b>draft</b> GitHub Release; otherwise nothing happens.</li>
+      <li>On <code>ubuntu-22.04</code> and <code>windows-latest</code>, <code>tauri-action</code> builds the installers (<code>.exe</code> NSIS, <code>.msi</code>, <code>.AppImage</code>, <code>.deb</code>) and uploads them, and the TUI is attached as <code>ccmon-cli-linux-x64</code> / <code>ccmon-cli-windows-x64.exe</code>.</li>
+      <li>A maintainer reviews the draft and publishes it; the website's download buttons pick up the latest published release.</li>
+    </ol>
+    <p>A release can also be started by pushing a <code>v*</code> tag by hand, or re-built from the Actions tab (“Run workflow” with an existing tag).</p>
+    <h3>Website</h3>
+    <p>The site in <code>website/</code> is deployed by <code>.github/workflows/pages.yml</code> on every push to <code>main</code> that touches <code>website/**</code>. It is plain HTML/CSS/JS: open the files directly or serve the folder (<code>python3 -m http.server -d website</code>) to preview.</p>
+  </div>
+  <div class="l-vi">
+    <p>Việc phát hành được tự động hoá bằng <code>.github/workflows/release.yml</code>:</p>
+    <ol>
+      <li>Tăng phiên bản trong một PR. Workflow đọc <code>version</code> trong <code>Cargo.toml</code> gốc; hãy giữ <code>gui/src-tauri/Cargo.toml</code> và <code>gui/src-tauri/tauri.conf.json</code> (quyết định tên file bộ cài) cùng phiên bản.</li>
+      <li>Merge vào <code>main</code>. Nếu chưa có tag <code>v&lt;version&gt;</code>, workflow gắn tag cho <code>HEAD</code> và tạo một GitHub Release dạng <b>nháp</b>; nếu đã có thì không làm gì.</li>
+      <li>Trên <code>ubuntu-22.04</code> và <code>windows-latest</code>, <code>tauri-action</code> build bộ cài (<code>.exe</code> NSIS, <code>.msi</code>, <code>.AppImage</code>, <code>.deb</code>) và tải lên, còn TUI được đính kèm dưới tên <code>ccmon-cli-linux-x64</code> / <code>ccmon-cli-windows-x64.exe</code>.</li>
+      <li>Maintainer kiểm tra bản nháp rồi công bố; nút tải trên website lấy bản phát hành công bố mới nhất.</li>
+    </ol>
+    <p>Cũng có thể phát hành bằng cách tự push tag <code>v*</code>, hoặc build lại từ tab Actions (“Run workflow” với một tag có sẵn).</p>
+    <h3>Website</h3>
+    <p>Website trong <code>website/</code> được <code>.github/workflows/pages.yml</code> triển khai ở mỗi lần push vào <code>main</code> có đụng tới <code>website/**</code>. Đây là HTML/CSS/JS thuần: mở file trực tiếp hoặc phục vụ thư mục (<code>python3 -m http.server -d website</code>) để xem trước.</p>
+  </div>
+</section>
+    </main>
+  </div>
+
+  <footer>
+    <div class="wrap">
+      <div>© 2026 Lê Thanh Sơn · <a href="license.html"><span class="l-en">MIT License</span><span class="l-vi">Giấy phép MIT</span></a></div>
+      <div><span class="l-en">Claude Code is a trademark of Anthropic. Not affiliated.</span><span class="l-vi">Claude Code là thương hiệu của Anthropic. Không liên kết.</span></div>
+      <div><a href="https://github.com/wik1ngst-1103/cc-monitor/issues"><span class="l-en">Report an issue</span><span class="l-vi">Báo lỗi</span></a></div>
+    </div>
+    <div class="wrap foot-links">
+      <a href="index.html"><span class="l-en">Home</span><span class="l-vi">Trang chủ</span></a>
+      <a href="docs.html"><span class="l-en">User guide</span><span class="l-vi">Hướng dẫn sử dụng</span></a>
+      <a href="contributing.html"><span class="l-en">Contributing</span><span class="l-vi">Đóng góp</span></a>
+      <a href="privacy.html"><span class="l-en">Privacy</span><span class="l-vi">Quyền riêng tư</span></a>
+      <a href="security.html"><span class="l-en">Security</span><span class="l-vi">Bảo mật</span></a>
+      <a href="code-of-conduct.html"><span class="l-en">Code of conduct</span><span class="l-vi">Quy tắc ứng xử</span></a>
+      <a href="license.html"><span class="l-en">License</span><span class="l-vi">Giấy phép</span></a>
+    </div>
+  </footer>
+</body>
+</html>

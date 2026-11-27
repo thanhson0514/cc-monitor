@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { api, fmtDur, fmtTokens, HistoryProject, StatusInfo, ThreadView, TreeRow } from './api';
+import { api, Draft, fmtDur, fmtTokens, HistoryProject, RunState, StatusInfo, ThreadView, TreeRow } from './api';
+import { OpenPath } from './open';
 import { Chat } from './Chat';
 import { Sidebar, Viewer } from './Sidebar';
 import { ChangesPanel } from './Changes';
@@ -17,35 +18,129 @@ const START_TIMEOUT_MS = 15000;
 
 const STATUS_DOT: Record<string, string> = { running: '●', done: '✓', error: '✗', idle: '○' };
 
-function TreeRows({ rows, selected, onSelect }: { rows: TreeRow[]; selected: string | null; onSelect: (k: string) => void }) {
+/** Children above this count start folded (until the user toggles the node). */
+const AUTO_FOLD = 6;
+
+type Fold = Record<string, boolean>;
+
+/** Per row: number of descendants and how many of them are running. */
+function subtreeStats(rows: TreeRow[]): { kids: number; running: number; end: number }[] {
+    return rows.map((r, i) => {
+        let j = i + 1;
+        let running = 0;
+        while (j < rows.length && rows[j].depth > r.depth) {
+            if (rows[j].status === 'running') running++;
+            j++;
+        }
+        return { kids: j - i - 1, running, end: j };
+    });
+}
+
+const isFolded = (fold: Fold, key: string, kids: number) => kids > 0 && (fold[key] ?? kids > AUTO_FOLD);
+
+function TreeRows({
+    rows,
+    selected,
+    onSelect,
+    fold,
+    onFold
+}: {
+    rows: TreeRow[];
+    selected: string | null;
+    onSelect: (k: string) => void;
+    fold: Fold;
+    onFold: (key: string, folded: boolean) => void;
+}) {
+    const stats = subtreeStats(rows);
+    const sel = rows.findIndex((r) => r.key === selected);
+    const shown: number[] = [];
+    for (let i = 0; i < rows.length; ) {
+        shown.push(i);
+        const st = stats[i];
+        // A folded node still opens when the selected row is inside it.
+        const holdsSel = sel > i && sel < st.end;
+        i = isFolded(fold, rows[i].key, st.kids) && !holdsSel ? st.end : i + 1;
+    }
     return (
         <>
-            {rows.map((r) => (
-                <button
-                    key={r.key}
-                    type="button"
-                    className={`tree-row ${r.key === selected ? 'selected' : ''} kind-${r.kind}`}
-                    style={{ paddingLeft: 10 + r.depth * 16 }}
-                    onClick={() => onSelect(r.key)}
-                    title={r.tmux ? `${r.label}\ntmux ${r.tmux}` : r.label}
-                >
-                    <span className={`dot st-${r.status}`}>{STATUS_DOT[r.status]}</span>
-                    {r.kind === 'workflow' && <span className="icon">⚙</span>}
-                    {r.kind === 'main' && r.tool && <span className={`tool-tag tool-${r.tool}`}>{r.tool === 'codex' ? 'Codex' : 'Claude'}</span>}
-                    {r.kind === 'agent' && r.agentType && <span className="agent-type">{r.agentType}</span>}
-                    <span className="tree-label">{r.label}</span>
-                    {r.kind === 'main' && r.live && (
-                        <span className={`live-badge live-${r.live}`}>{r.live === 'busy' ? 'đang làm' : 'chờ'}</span>
-                    )}
-                    {r.progress && (
-                        <span className="progress">
-                            {r.progress[0]}/{r.progress[1]}
-                        </span>
-                    )}
-                </button>
-            ))}
+            {shown.map((i) => {
+                const r = rows[i];
+                const st = stats[i];
+                const folded = isFolded(fold, r.key, st.kids) && !(sel > i && sel < st.end);
+                return (
+                    <button
+                        key={r.key}
+                        type="button"
+                        className={`tree-row ${r.key === selected ? 'selected' : ''} kind-${r.kind}`}
+                        style={{ paddingLeft: 4 + r.depth * 16 }}
+                        onClick={() => onSelect(r.key)}
+                        title={r.tmux ? `${r.label}\ntmux ${r.tmux}` : r.label}
+                    >
+                        {st.kids > 0 ? (
+                            <span
+                                className="twisty"
+                                role="button"
+                                tabIndex={-1}
+                                aria-expanded={!folded}
+                                title={folded ? `Mở ${st.kids} mục con` : 'Thu gọn mục con'}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    onFold(r.key, !folded);
+                                }}
+                            >
+                                {folded ? '▸' : '▾'}
+                            </span>
+                        ) : (
+                            <span className="twisty" />
+                        )}
+                        <span className={`dot st-${r.status}`}>{STATUS_DOT[r.status]}</span>
+                        {r.kind === 'workflow' && <span className="icon">⚙</span>}
+                        {r.kind === 'main' && r.tool && <span className={`tool-tag tool-${r.tool}`}>{r.tool === 'codex' ? 'Codex' : 'Claude'}</span>}
+                        {r.kind === 'agent' && r.agentType && <span className="agent-type">{r.agentType}</span>}
+                        <span className="tree-label">{r.label}</span>
+                        {r.kind === 'main' && r.live && (
+                            <span className={`live-badge live-${r.live}`}>{r.live === 'busy' ? 'đang làm' : 'chờ'}</span>
+                        )}
+                        {r.progress && (
+                            <span className="progress">
+                                {r.progress[0]}/{r.progress[1]}
+                            </span>
+                        )}
+                        {folded && (
+                            <span className="fold-count" title={`${st.kids} mục con đang ẩn`}>
+                                {st.running > 0 && <span className="fold-running">●{st.running}</span>}+{st.kids}
+                            </span>
+                        )}
+                    </button>
+                );
+            })}
         </>
     );
+}
+
+function useFold(): [Fold, (key: string, folded: boolean) => void, (keys: string[], folded: boolean) => void] {
+    const [fold, setFold] = useState<Fold>(() => {
+        try {
+            return JSON.parse(localStorage.getItem('ccmon.treeFold') ?? '{}') as Fold;
+        } catch {
+            return {};
+        }
+    });
+    useEffect(() => {
+        try {
+            // Keep the map small: only the most recent choices.
+            const entries = Object.entries(fold).slice(-300);
+            localStorage.setItem('ccmon.treeFold', JSON.stringify(Object.fromEntries(entries)));
+        } catch {
+            /* storage unavailable: keep in memory only */
+        }
+    }, [fold]);
+    const one = useCallback((key: string, folded: boolean) => setFold((f) => ({ ...f, [key]: folded })), []);
+    const all = useCallback(
+        (keys: string[], folded: boolean) => setFold((f) => ({ ...f, ...Object.fromEntries(keys.map((k) => [k, folded])) })),
+        []
+    );
+    return [fold, one, all];
 }
 
 /** Split the flat tree into per-session blocks (a depth-0 row and its descendants). */
@@ -132,6 +227,28 @@ function Tree({
     const blocks = sessionBlocks(rows);
     const open = blocks.filter((b) => b[0].open);
     const recent = blocks.filter((b) => !b[0].open);
+    const [fold, setFold, setFoldAll] = useFold();
+    const parents = (bs: TreeRow[][]) =>
+        bs.flatMap((b) => {
+            const st = subtreeStats(b);
+            return b.flatMap((r, i) => (st[i].kids > 0 ? [{ key: r.key, kids: st[i].kids }] : []));
+        });
+    const FoldAll = ({ bs }: { bs: TreeRow[][] }) => {
+        const ps = parents(bs);
+        if (ps.length === 0) return null;
+        const anyOpen = ps.some((p) => !isFolded(fold, p.key, p.kids));
+        return (
+            <button
+                type="button"
+                className="fold-all"
+                onClick={() => setFoldAll(ps.map((p) => p.key), anyOpen)}
+                title={anyOpen ? 'Thu gọn tất cả subagent/workflow' : 'Mở tất cả subagent/workflow'}
+                aria-label={anyOpen ? 'Thu gọn tất cả' : 'Mở tất cả'}
+            >
+                {anyOpen ? '⊟' : '⊞'}
+            </button>
+        );
+    };
     const [showOld, setShowOld] = useState(false);
     const [history, setHistory] = useState<HistoryProject[] | null>(null);
     const [days, setDays] = useState(30);
@@ -163,17 +280,23 @@ function Tree({
             </div>
             <div className="pane-title pane-title-row">
                 <span>Đang mở · {open.length}</span>
+                <FoldAll bs={open} />
                 <button type="button" className="new-sess-btn" onClick={onNewSession} title="Chạy một session Claude Code mới từ ccmon">
                     + Session mới…
                 </button>
             </div>
             {open.length === 0 && <div className="muted pad small">Không có phiên nào đang chạy.</div>}
             {open.map((b) => (
-                <TreeRows key={b[0].key} rows={b} selected={selected} onSelect={onSelect} />
+                <TreeRows key={b[0].key} rows={b} selected={selected} onSelect={onSelect} fold={fold} onFold={setFold} />
             ))}
-            {recent.length > 0 && <div className="pane-title">Đã đóng gần đây / đang xem</div>}
+            {recent.length > 0 && (
+                <div className="pane-title pane-title-row">
+                    <span>Đã đóng gần đây / đang xem</span>
+                    <FoldAll bs={recent} />
+                </div>
+            )}
             {recent.map((b) => (
-                <TreeRows key={b[0].key} rows={b} selected={selected} onSelect={onSelect} />
+                <TreeRows key={b[0].key} rows={b} selected={selected} onSelect={onSelect} fold={fold} onFold={setFold} />
             ))}
             <button type="button" className="pane-title pane-toggle" onClick={() => setShowOld(!showOld)}>
                 {showOld ? '▾' : '▸'} Phiên cũ ({days} ngày)
@@ -471,6 +594,37 @@ export default function App() {
         window.addEventListener('keydown', k);
         return () => window.removeEventListener('keydown', k);
     }, []);
+    const [viewPath, setViewPath] = useState<string | null>(null);
+    /** Live drafts of managed sessions' streaming messages, by session id. */
+    const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+    useEffect(() => {
+        const timers = new Map<string, number>();
+        const un1 = listen<{ sid: string; draft: Draft }>('draft', (e) => {
+            const { sid, draft } = e.payload;
+            clearTimeout(timers.get(sid));
+            setDrafts((d) => ({ ...d, [sid]: draft }));
+        });
+        // A finished or dead turn: drop its draft once the transcript had time to catch up.
+        const un2 = listen<{ sid: string; runState: RunState }>('control-changed', (e) => {
+            const { sid, runState } = e.payload;
+            if (runState.kind !== 'idle' && runState.kind !== 'exited') return;
+            clearTimeout(timers.get(sid));
+            timers.set(
+                sid,
+                window.setTimeout(() => {
+                    setDrafts((d) => {
+                        const { [sid]: _gone, ...rest } = d;
+                        return rest;
+                    });
+                }, 4000)
+            );
+        });
+        return () => {
+            un1.then((f) => f());
+            un2.then((f) => f());
+            timers.forEach((t) => clearTimeout(t));
+        };
+    }, []);
     const [assetTick, setAssetTick] = useState(0);
     const pendingOpen = useRef<string | null>(null);
     const scroller = useRef<HTMLDivElement>(null);
@@ -679,7 +833,11 @@ export default function App() {
         api.openSession(sid);
     };
 
+    const opener = useMemo(() => ({ open: setViewPath, base: view?.cwd ?? null }), [view?.cwd]);
+    const viewDraft = view && view.key.startsWith('m:') ? drafts[view.key.slice(2)] : undefined;
+
     return (
+        <OpenPath.Provider value={opener}>
         <div className={`app ${showSidebar && page === 'thread' && panelKey ? 'with-sidebar' : ''} ${treeOpen ? '' : 'tree-collapsed'}`}>
             {treeOpen ? (
                 <Tree
@@ -786,7 +944,7 @@ export default function App() {
                     ) : selected?.startsWith('w:') ? (
                         <WorkflowView rows={rows} wfKey={selected} onSelect={select} />
                     ) : view ? (
-                        <Chat view={view} now={now} onOpen={select} />
+                        <Chat view={view} now={now} onOpen={select} draft={viewDraft} />
                     ) : (
                         <div className="muted pad">Đang tải…</div>
                     )}
@@ -825,6 +983,8 @@ export default function App() {
                 />
             )}
             {startup.view && <Viewer path={startup.view} onClose={() => setStartup((s) => ({ ...s, view: null }))} />}
+            {viewPath && <Viewer path={viewPath} base={opener.base} onClose={() => setViewPath(null)} />}
         </div>
+        </OpenPath.Provider>
     );
 }

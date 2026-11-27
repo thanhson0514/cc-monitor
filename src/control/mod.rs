@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::{Path, PathBuf};
 
+pub mod draft;
 pub mod runner;
 pub mod state;
 
@@ -116,6 +117,8 @@ fn build_args_with(
         "stream-json",
         "--output-format",
         "stream-json",
+        // Token-level `stream_event`s: the transcript lags whole messages behind.
+        "--include-partial-messages",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -218,6 +221,7 @@ mod tests {
                 "stream-json",
                 "--output-format",
                 "stream-json",
+                "--include-partial-messages",
                 "--resume",
                 "abc-123",
                 "--model",

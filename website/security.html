@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title data-vi="Chính sách bảo mật — ccmon">Security policy — ccmon</title>
+  <meta name="description" content="How to report a security vulnerability in ccmon privately, and which versions receive fixes." />
+  <link rel="canonical" href="https://cc-monitor.online/security.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://cc-monitor.online/security.html" />
+  <meta property="og:title" content="Security policy — ccmon" />
+  <meta property="og:description" content="How to report a security vulnerability in ccmon privately, and which versions receive fixes." />
+  <meta property="og:image" content="https://cc-monitor.online/assets/screen-main.png" />
+  <link rel="icon" href="assets/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/site.css" />
+  <link rel="stylesheet" href="assets/docs.css" />
+  <script src="assets/docs.js"></script>
+</head>
+<body>
+  <!-- Generated layout: keep the nav, sidebar and footer in sync across the docs pages. -->
+  <nav>
+    <div class="wrap">
+      <a class="logo" href="index.html"><img src="assets/logo.png" alt="" /> ccmon</a>
+      <div class="links">
+        <a class="hide-sm" href="index.html"><span class="l-en">Home</span><span class="l-vi">Trang chủ</span></a>
+        <a href="docs.html"><span class="l-en">Docs</span><span class="l-vi">Tài liệu</span></a>
+        <a class="hide-sm" href="contributing.html"><span class="l-en">Contributing</span><span class="l-vi">Đóng góp</span></a>
+        <a href="https://github.com/wik1ngst-1103/cc-monitor">GitHub</a>
+        <div class="lang"><button data-lang="en" class="on">EN</button><button data-lang="vi">VI</button></div>
+      </div>
+    </div>
+  </nav>
+
+  <header class="doc-hero">
+    <div class="wrap">
+      <div class="eyebrow"><span class="l-en">Policy</span><span class="l-vi">Chính sách</span></div>
+      <h1><span class="l-en">Security policy</span><span class="l-vi">Chính sách bảo mật</span></h1>
+      <p class="lead"><span class="l-en">Supported versions and how to report a vulnerability privately.</span><span class="l-vi">Các phiên bản được hỗ trợ và cách báo cáo lỗ hổng một cách riêng tư.</span></p>
+    </div>
+  </header>
+
+  <div class="wrap doc-layout">
+    <aside class="doc-side" aria-label="Documentation">
+      <div class="grp">
+        <div class="grp-t"><span class="l-en">Pages</span><span class="l-vi">Các trang</span></div>
+        <div class="lst">
+        <a href="docs.html"><span class="l-en">User guide</span><span class="l-vi">Hướng dẫn sử dụng</span></a>
+        <a href="contributing.html"><span class="l-en">Contributing</span><span class="l-vi">Đóng góp</span></a>
+        <a href="privacy.html"><span class="l-en">Privacy</span><span class="l-vi">Quyền riêng tư</span></a>
+        <a href="security.html" class="on" aria-current="page"><span class="l-en">Security</span><span class="l-vi">Bảo mật</span></a>
+        <a href="code-of-conduct.html"><span class="l-en">Code of conduct</span><span class="l-vi">Quy tắc ứng xử</span></a>
+        <a href="license.html"><span class="l-en">License</span><span class="l-vi">Giấy phép</span></a>
+        </div>
+      </div>
+      <div class="grp toc">
+        <div class="grp-t"><span class="l-en">On this page</span><span class="l-vi">Trong trang này</span></div>
+        <div class="lst">
+        <a href="#versions"><span class="l-en">Supported versions</span><span class="l-vi">Phiên bản được hỗ trợ</span></a>
+        <a href="#report"><span class="l-en">Reporting a vulnerability</span><span class="l-vi">Báo cáo lỗ hổng</span></a>
+        <a href="#process"><span class="l-en">What happens next</span><span class="l-vi">Điều gì xảy ra tiếp theo</span></a>
+        <a href="#scope"><span class="l-en">Scope</span><span class="l-vi">Phạm vi</span></a>
+        <a href="#model"><span class="l-en">Security model</span><span class="l-vi">Mô hình bảo mật</span></a>
+        </div>
+      </div>
+    </aside>
+
+    <main class="prose">
+<section id="versions" data-en="Supported versions" data-vi="Phiên bản được hỗ trợ">
+  <h2><span class="l-en">Supported versions</span><span class="l-vi">Phiên bản được hỗ trợ</span></h2>
+  <div class="l-en"><p>ccmon is a young project maintained by volunteers. Security fixes are made on <code>main</code> and shipped in the next release; older releases are not patched. Please update to the <a href="https://github.com/wik1ngst-1103/cc-monitor/releases/latest">latest release</a> before reporting.</p></div>
+  <div class="l-vi"><p>ccmon là dự án còn non trẻ do tình nguyện viên duy trì. Bản vá bảo mật được làm trên <code>main</code> và phát hành ở bản kế tiếp; các bản cũ không được vá. Vui lòng cập nhật lên <a href="https://github.com/wik1ngst-1103/cc-monitor/releases/latest">bản mới nhất</a> trước khi báo cáo.</p></div>
+  <div class="table-wrap"><table>
+    <thead><tr><th><span class="l-en">Version</span><span class="l-vi">Phiên bản</span></th><th><span class="l-en">Supported</span><span class="l-vi">Hỗ trợ</span></th></tr></thead>
+    <tbody>
+      <tr><td><span class="l-en">Latest release (0.3.x)</span><span class="l-vi">Bản mới nhất (0.3.x)</span></td><td><span style="color:var(--green)">✓</span></td></tr>
+      <tr><td><span class="l-en">Older releases</span><span class="l-vi">Bản cũ hơn</span></td><td><span style="color:var(--muted)">✗</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="report" data-en="Reporting a vulnerability" data-vi="Báo cáo lỗ hổng">
+  <h2><span class="l-en">Reporting a vulnerability</span><span class="l-vi">Báo cáo lỗ hổng</span></h2>
+  <div class="l-en">
+    <div class="callout warn"><p><b>Please do not report security vulnerabilities through public GitHub issues, pull requests or discussions.</b></p></div>
+    <p>Report privately through GitHub's private vulnerability reporting:</p>
+    <p><a class="btn btn-primary" href="https://github.com/wik1ngst-1103/cc-monitor/security/advisories/new">Report a vulnerability</a></p>
+    <p>or open the repository's <b>Security</b> tab and choose <b>Report a vulnerability</b>. Only the maintainers can see the report. Please include as much as you can:</p>
+    <ul>
+      <li>ccmon version, operating system, and whether it is the desktop app or the terminal UI;</li>
+      <li>the type of issue (for example path traversal, command injection, script injection in the webview, unintended file writes);</li>
+      <li>step-by-step instructions to reproduce, with a proof of concept if possible;</li>
+      <li>the impact: what an attacker could do, and what they need first.</li>
+    </ul>
+    <p>Use a minimal, synthetic transcript to demonstrate the problem — never send real transcripts, which contain private code and prompts.</p>
+  </div>
+  <div class="l-vi">
+    <div class="callout warn"><p><b>Vui lòng không báo cáo lỗ hổng bảo mật qua issue, pull request hay thảo luận công khai trên GitHub.</b></p></div>
+    <p>Hãy báo cáo riêng tư qua tính năng private vulnerability reporting của GitHub:</p>
+    <p><a class="btn btn-primary" href="https://github.com/wik1ngst-1103/cc-monitor/security/advisories/new">Báo cáo lỗ hổng</a></p>
+    <p>hoặc mở tab <b>Security</b> của repo và chọn <b>Report a vulnerability</b>. Chỉ maintainer thấy được báo cáo. Hãy ghi càng đầy đủ càng tốt:</p>
+    <ul>
+      <li>phiên bản ccmon, hệ điều hành, và đó là ứng dụng desktop hay giao diện terminal;</li>
+      <li>loại vấn đề (ví dụ path traversal, chèn lệnh, chèn script vào webview, ghi file ngoài ý muốn);</li>
+      <li>các bước tái hiện, kèm proof of concept nếu có;</li>
+      <li>mức ảnh hưởng: kẻ tấn công làm được gì, và cần gì trước đó.</li>
+    </ul>
+    <p>Dùng một transcript tổng hợp, tối thiểu để minh hoạ — không bao giờ gửi transcript thật, vì chúng chứa code và prompt riêng tư.</p>
+  </div>
+</section>
+
+<section id="process" data-en="What happens next" data-vi="Điều gì xảy ra tiếp theo">
+  <h2><span class="l-en">What happens next</span><span class="l-vi">Điều gì xảy ra tiếp theo</span></h2>
+  <div class="l-en"><ol>
+    <li>We acknowledge the report in the private advisory as soon as we can and confirm whether we can reproduce it.</li>
+    <li>We work on a fix in the advisory's private fork and keep you updated there. You are welcome to review the fix.</li>
+    <li>We release a fixed version, publish the advisory (requesting a CVE where appropriate) and credit you, unless you prefer to stay anonymous.</li>
+  </ol>
+  <p>We follow coordinated disclosure: please give us reasonable time to ship a fix before you publish details. Reports made in good faith that respect users' privacy and avoid harm are welcome — thank you for helping keep ccmon users safe.</p></div>
+  <div class="l-vi"><ol>
+    <li>Chúng tôi xác nhận đã nhận báo cáo trong advisory riêng tư sớm nhất có thể và cho biết có tái hiện được không.</li>
+    <li>Chúng tôi sửa lỗi trong fork riêng tư của advisory và cập nhật cho bạn ở đó. Bạn được mời review bản sửa.</li>
+    <li>Chúng tôi phát hành phiên bản đã sửa, công bố advisory (xin mã CVE khi phù hợp) và ghi công bạn, trừ khi bạn muốn ẩn danh.</li>
+  </ol>
+  <p>Chúng tôi theo nguyên tắc công bố phối hợp: vui lòng cho chúng tôi thời gian hợp lý để phát hành bản sửa trước khi công bố chi tiết. Mọi báo cáo thiện chí, tôn trọng quyền riêng tư của người dùng và tránh gây hại đều được hoan nghênh — cảm ơn bạn đã giúp người dùng ccmon an toàn hơn.</p></div>
+</section>
+
+<section id="scope" data-en="Scope" data-vi="Phạm vi">
+  <h2><span class="l-en">Scope</span><span class="l-vi">Phạm vi</span></h2>
+  <div class="l-en">
+    <h3>In scope</h3>
+    <ul>
+      <li>The ccmon desktop app (<code>ccmon-gui</code>), the terminal UI (<code>ccmon</code>) and the installers attached to GitHub Releases.</li>
+      <li>Especially: untrusted transcript content (Markdown, tool output, file names) reaching the webview or the Tauri commands; files written outside ccmon's state folder or the documented locations; the <code>tee</code> status-line wrapper; the arguments ccmon passes when it launches <code>claude</code>; secrets from MCP or settings files being exposed in the UI.</li>
+      <li>This website, <code>cc-monitor.online</code>.</li>
+    </ul>
+    <h3>Out of scope</h3>
+    <ul>
+      <li>Vulnerabilities in <b>Claude Code</b> itself — please report those to Anthropic through its own disclosure process.</li>
+      <li>Vulnerabilities in Tauri, WebView2, WebKitGTK or other dependencies, unless ccmon uses them in an unsafe way — please report upstream (and let us know if a ccmon update is needed).</li>
+      <li>Behaviour that works as documented, for example the <code>bypassPermissions</code> mode letting an agent run any tool, or a terminal session staying view-only.</li>
+      <li>Attacks that require an attacker who can already write to your home directory or run code as your user.</li>
+    </ul>
+  </div>
+  <div class="l-vi">
+    <h3>Trong phạm vi</h3>
+    <ul>
+      <li>Ứng dụng desktop ccmon (<code>ccmon-gui</code>), giao diện terminal (<code>ccmon</code>) và các bộ cài đính kèm trên GitHub Releases.</li>
+      <li>Đặc biệt: nội dung transcript không tin cậy (Markdown, output của tool, tên file) tác động tới webview hoặc các command của Tauri; file bị ghi ra ngoài thư mục trạng thái của ccmon hoặc các vị trí đã nêu; lớp bọc status line <code>tee</code>; tham số ccmon truyền khi khởi chạy <code>claude</code>; bí mật trong file MCP hay settings bị lộ lên giao diện.</li>
+      <li>Website này, <code>cc-monitor.online</code>.</li>
+    </ul>
+    <h3>Ngoài phạm vi</h3>
+    <ul>
+      <li>Lỗ hổng của chính <b>Claude Code</b> — vui lòng báo cho Anthropic theo quy trình công bố của họ.</li>
+      <li>Lỗ hổng của Tauri, WebView2, WebKitGTK hay phụ thuộc khác, trừ khi ccmon dùng chúng thiếu an toàn — vui lòng báo cho dự án gốc (và cho chúng tôi biết nếu ccmon cần cập nhật).</li>
+      <li>Hành vi đúng như tài liệu, ví dụ chế độ <code>bypassPermissions</code> cho agent chạy mọi tool, hay session ở terminal chỉ được xem.</li>
+      <li>Tấn công đòi hỏi kẻ tấn công đã ghi được vào thư mục home của bạn hoặc chạy code dưới tài khoản của bạn.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="model" data-en="Security model" data-vi="Mô hình bảo mật">
+  <h2><span class="l-en">Security model, in short</span><span class="l-vi">Mô hình bảo mật, tóm tắt</span></h2>
+  <div class="l-en"><ul>
+    <li>ccmon is a local app that runs with your user's permissions and opens no network connections (see <a href="privacy.html">Privacy</a>).</li>
+    <li>Watching is read-only. Writes are limited to ccmon's own state folder, plus the opt-in status-line wrapper (with a backup) and agent files you confirm.</li>
+    <li>State files are written atomically, and any path built from a session id is validated first.</li>
+    <li>MCP server environment variables and headers are not shown; credentials and query strings are stripped from MCP URLs before display.</li>
+    <li>Sessions run from ccmon are ordinary <code>claude -p</code> processes with the permission mode you choose. Tools that need approval are denied unless you pick a more permissive mode.</li>
+  </ul></div>
+  <div class="l-vi"><ul>
+    <li>ccmon là ứng dụng cục bộ chạy với quyền của tài khoản bạn và không mở kết nối mạng (xem <a href="privacy.html">Quyền riêng tư</a>).</li>
+    <li>Theo dõi thì chỉ đọc. Việc ghi giới hạn trong thư mục trạng thái của ccmon, cùng lớp bọc status line do bạn chọn (có sao lưu) và file agent bạn xác nhận.</li>
+    <li>File trạng thái được ghi nguyên tử, và mọi đường dẫn tạo từ session id đều được kiểm tra trước.</li>
+    <li>Biến môi trường và header của MCP server không được hiển thị; thông tin đăng nhập và query string bị cắt khỏi URL MCP trước khi hiển thị.</li>
+    <li>Session chạy từ ccmon là tiến trình <code>claude -p</code> bình thường với chế độ quyền bạn chọn. Tool cần duyệt sẽ bị từ chối trừ khi bạn chọn chế độ thoáng hơn.</li>
+  </ul></div>
+</section>
+    </main>
+  </div>
+
+  <footer>
+    <div class="wrap">
+      <div>© 2026 Lê Thanh Sơn · <a href="license.html"><span class="l-en">MIT License</span><span class="l-vi">Giấy phép MIT</span></a></div>
+      <div><span class="l-en">Claude Code is a trademark of Anthropic. Not affiliated.</span><span class="l-vi">Claude Code là thương hiệu của Anthropic. Không liên kết.</span></div>
+      <div><a href="https://github.com/wik1ngst-1103/cc-monitor/issues"><span class="l-en">Report an issue</span><span class="l-vi">Báo lỗi</span></a></div>
+    </div>
+    <div class="wrap foot-links">
+      <a href="index.html"><span class="l-en">Home</span><span class="l-vi">Trang chủ</span></a>
+      <a href="docs.html"><span class="l-en">User guide</span><span class="l-vi">Hướng dẫn sử dụng</span></a>
+      <a href="contributing.html"><span class="l-en">Contributing</span><span class="l-vi">Đóng góp</span></a>
+      <a href="privacy.html"><span class="l-en">Privacy</span><span class="l-vi">Quyền riêng tư</span></a>
+      <a href="security.html"><span class="l-en">Security</span><span class="l-vi">Bảo mật</span></a>
+      <a href="code-of-conduct.html"><span class="l-en">Code of conduct</span><span class="l-vi">Quy tắc ứng xử</span></a>
+      <a href="license.html"><span class="l-en">License</span><span class="l-vi">Giấy phép</span></a>
+    </div>
+  </footer>
+</body>
+</html>
