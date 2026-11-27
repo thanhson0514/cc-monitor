@@ -989,7 +989,7 @@ export default function App() {
                 {newCwd ? (
                     <Composer key={`new:${newCwd}`} sid={null} cwd={newCwd} onStarted={started} />
                 ) : (
-                    composerSid && <Composer key={composerSid} sid={composerSid} cwd={starting ? starting.cwd : null} current={status} tmuxPane={mainRow?.tmux ?? null} />
+                    composerSid && <Composer key={composerSid} sid={composerSid} cwd={starting ? starting.cwd : null} current={status} tmuxPane={mainRow?.tmux ?? null} running={mainRow?.status === 'running'} />
                 )}
                 <StatusBar s={status} />
             </main>

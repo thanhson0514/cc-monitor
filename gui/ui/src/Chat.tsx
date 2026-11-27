@@ -158,7 +158,10 @@ function AgentCard({ tool, onOpen }: { tool: ToolItem; onOpen: (key: string) => 
                     {STATE_ICON[status]} {status}
                     {link.progress ? ` · ${link.progress[0]}/${link.progress[1]}` : ''}
                 </span>
-                {link.kind === 'agent' && link.key && <SubagentControl agentKey={link.key} compact />}
+                {/* Controls only for a live or paused agent: a finished one has none (no polling). */}
+                {link.kind === 'agent' && link.key && (status === 'running' || status === 'idle' || link.paused) && (
+                    <SubagentControl agentKey={link.key} status={link.status} compact />
+                )}
                 {link.key && (
                     <button className="link-btn" type="button" onClick={() => onOpen(link.key!)}>
                         Mở luồng →

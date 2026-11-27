@@ -17,7 +17,7 @@ export const LOCK_REASON: Record<string, string> = {
     claudeNotFound: 'Không tìm thấy lệnh claude — cài Claude Code hoặc thêm vào PATH',
     notInTmux: 'Session terminal không chạy trong tmux — chỉ xem',
     paneGone: 'Không tìm thấy pane tmux của session — chỉ xem',
-    notForeground: 'Session đang bị tạm ngưng trong terminal (Ctrl+Z) — chỉ xem',
+    notForeground: 'Session không ở tiền cảnh trong pane tmux (bị Ctrl+Z hoặc đang chạy lệnh khác) — chỉ xem',
     unsupported: 'Hệ điều hành này chưa hỗ trợ gửi vào terminal — chỉ xem'
 };
 
@@ -189,6 +189,7 @@ export function Composer({
     cwd,
     current = null,
     tmuxPane = null,
+    running = false,
     onStarted
 }: {
     sid: string | null;
@@ -197,6 +198,8 @@ export function Composer({
     current?: StatusInfo | null;
     /** Pane field of the session's tree row (e.g. `cde:@1.%4`), for the terminal hint. */
     tmuxPane?: string | null;
+    /** The session's tree row reads running (a turn is in progress). */
+    running?: boolean;
     onStarted?: (sid: string) => void;
 }) {
     const [dto, setDto] = useState<ControlDto | null>(null);
@@ -262,8 +265,12 @@ export function Composer({
     const tmux = dto?.channel === 'tmux' && !locked;
     const paneId = tmuxPane?.match(/%\d+/)?.[0] ?? tmuxPane ?? '';
     const managed = !tmux && runState !== null && runState.kind !== 'exited';
+    // An existing session before its first dto: channel unknown, so no overlay
+    // writes (a tmux session must not get one) and the chips stay disabled.
+    const loading = !!sid && !dto;
 
     const update = (o: Overlay) => {
+        if (sid && !dto) return;
         setErr(null);
         if (!sid) {
             setDraft(o);
@@ -530,7 +537,7 @@ export function Composer({
                 <select
                     className={`cmp-chip ${overlay.model ? 'on' : curModel ? 'cur' : ''}`}
                     value={tmux ? '' : overlay.model ?? ''}
-                    disabled={locked || (tmux && sending)}
+                    disabled={locked || loading || (tmux && sending)}
                     title={tmux ? 'Gửi /model vào terminal' : modelTitle}
                     onChange={(e) => (tmux ? slash('model', e.target.value) : update({ ...overlay, model: e.target.value || null }))}
                 >
@@ -544,7 +551,7 @@ export function Composer({
                 <select
                     className={`cmp-chip ${overlay.effort ? 'on' : curEffort ? 'cur' : ''}`}
                     value={tmux ? '' : overlay.effort ?? ''}
-                    disabled={locked || (tmux && sending)}
+                    disabled={locked || loading || (tmux && sending)}
                     title={tmux ? 'Gửi /effort vào terminal' : effortTitle}
                     onChange={(e) => (tmux ? slash('effort', e.target.value) : update({ ...overlay, effort: e.target.value || null }))}
                 >
@@ -558,7 +565,7 @@ export function Composer({
                 <select
                     className={`cmp-chip ${pm === 'bypassPermissions' ? 'warn' : ''}`}
                     value={pm}
-                    disabled={locked || tmux}
+                    disabled={locked || loading || tmux}
                     title={tmux ? TMUX_FIXED : pm === 'bypassPermissions' ? 'Bỏ qua mọi kiểm tra quyền — agent tự chạy mọi lệnh. Cẩn thận!' : PERMISSION_HINT}
                     onChange={(e) => update({ ...overlay, permissionMode: e.target.value === 'default' ? null : e.target.value })}
                 >
@@ -571,7 +578,7 @@ export function Composer({
                 <select
                     className={`cmp-chip ${overlay.mainAgent ? 'on' : ''}`}
                     value={overlay.mainAgent ?? ''}
-                    disabled={locked || tmux}
+                    disabled={locked || loading || tmux}
                     aria-label="Chạy session như agent"
                     title={
                         tmux
@@ -602,7 +609,7 @@ export function Composer({
                 <button
                     type="button"
                     className={`cmp-chip cmp-gear ${drawer ? 'on' : ''}`}
-                    disabled={locked || tmux}
+                    disabled={locked || loading || tmux}
                     onClick={() => setDrawer((d) => !d)}
                     title={tmux ? TMUX_FIXED : 'Capability cho session: bật/tắt skill, plugin, MCP, agent, workflow'}
                 >
@@ -611,7 +618,7 @@ export function Composer({
                 {dto?.pending && <span className="chip cmp-pending">Áp dụng từ lượt sau</span>}
                 <span className="cmp-right">
                     {runLabel(runState) && <span className={`cmp-state cmp-st-${runState?.kind}`}>{runLabel(runState)}</span>}
-                    {tmux && sid && (
+                    {tmux && sid && running && (
                         <button type="button" className="link-btn" onClick={interrupt} title="Gửi Escape vào terminal để dừng lượt đang chạy">
                             Dừng (Esc)
                         </button>

@@ -25,6 +25,8 @@ export interface LinkInfo {
     status: Status | null;
     progress: [number, number] | null;
     report: string | null;
+    /** ccmon holds a pause marker for this subagent. */
+    paused: boolean;
 }
 
 export interface BgTask {
@@ -360,6 +362,8 @@ export interface SubagentDto {
     status: 'running' | 'done' | 'error' | 'idle';
     /** ccmon paused it and can resume or swap it. */
     paused: boolean;
+    /** Paused, but the agent has not stopped yet (main was asked to stop it). */
+    stopping: boolean;
     channel: ControlChannel | null;
     reason: ControlReason | null;
 }
@@ -414,6 +418,8 @@ export const api = {
     subagent: (key: string) => invoke<SubagentDto | null>('get_subagent', { key }),
     subagentAction: (key: string, action: SubagentAction, agent?: string) =>
         invoke<void>('subagent_action', { key, action, agent: agent ?? null }),
+    /** Would swapping to `agent` restart the session (new/edited agent on a ccmon-run session)? */
+    subagentSwapCheck: (key: string, agent: string) => invoke<{ restart: boolean }>('subagent_swap_check', { key, agent }),
     catalog: (sid: string | null) => invoke<Capability[]>('get_catalog', { sid }),
     listAgents: (sid: string | null, cwd: string | null, light = false) => invoke<AgentItem[]>('list_agents', { sid, cwd, light }),
     listWorkflows: (sid: string | null, cwd: string | null) => invoke<AgentItem[]>('list_workflows', { sid, cwd }),

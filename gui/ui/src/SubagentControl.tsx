@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { AgentItem, api, SubagentAction, SubagentDto } from './api';
 import { AgentForm } from './Agents';
@@ -7,11 +7,13 @@ import { LOCK_REASON } from './Composer';
 const RESTART_WARNING = 'Session sẽ khởi động lại để nạp agent mới (các tác vụ nền khác của session sẽ dừng).';
 
 function SwapPicker({
+    agentKey,
     sid,
     dto,
     onClose,
     onConfirm
 }: {
+    agentKey: string;
     sid: string | null;
     dto: SubagentDto;
     onClose: () => void;
@@ -21,11 +23,11 @@ function SwapPicker({
     const [agents, setAgents] = useState<AgentItem[]>([]);
     const [filter, setFilter] = useState('');
     const [picked, setPicked] = useState<string | null>(null);
-    const [created, setCreated] = useState<string | null>(null);
     const [form, setForm] = useState(false);
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
     const [tick, setTick] = useState(0);
+    const [restart, setRestart] = useState(false);
 
     const [projectReady, setProjectReady] = useState(!sid);
     useEffect(() => {
@@ -50,10 +52,28 @@ function SwapPicker({
         };
     }, [sid, project, projectReady, tick]);
 
+    // Agents are picked by id (plugin agents are `plugin:name`), the same value
+    // main passed as subagent_type.
     const list = useMemo(() => {
         const q = filter.trim().toLowerCase();
-        return agents.filter((a) => !a.disabled && a.name !== dto.call.agentType && (!q || a.name.toLowerCase().includes(q)));
+        return agents.filter(
+            (a) => !a.disabled && a.id !== dto.call.agentType && (!q || a.id.toLowerCase().includes(q) || a.name.toLowerCase().includes(q))
+        );
     }, [agents, filter, dto.call.agentType]);
+    const pickedName = agents.find((a) => a.id === picked)?.name ?? picked;
+
+    // Dry run: does this target restart the session (new or edited agent file)?
+    useEffect(() => {
+        setRestart(false);
+        if (!picked) return;
+        let live = true;
+        api.subagentSwapCheck(agentKey, picked)
+            .then((r) => live && setRestart(r.restart))
+            .catch((e) => live && setErr(String(e)));
+        return () => {
+            live = false;
+        };
+    }, [agentKey, picked, tick]);
 
     const confirm = () => {
         if (!picked) return;
@@ -76,21 +96,30 @@ function SwapPicker({
                 </div>
                 <div className="sa-picker-list">
                     {list.map((a) => (
-                        <button key={a.name} type="button" className={`sa-picker-item ${picked === a.name ? 'on' : ''}`} onClick={() => setPicked(a.name)}>
+                        <button
+                            key={a.id}
+                            type="button"
+                            className={`sa-picker-item ${picked === a.id ? 'on' : ''}`}
+                            title={a.id}
+                            onClick={() => {
+                                setErr(null);
+                                setPicked(a.id);
+                            }}
+                        >
                             <b>{a.name}</b>
                             <span className="muted small">{a.description}</span>
                         </button>
                     ))}
                     {list.length === 0 && <div className="muted small">Không có agent phù hợp.</div>}
                 </div>
-                {picked && picked === created && dto.channel === 'managed' && <div className="setup-error">{RESTART_WARNING}</div>}
+                {picked && restart && <div className="setup-error">{RESTART_WARNING}</div>}
                 {err && <div className="setup-error">{err}</div>}
                 <div className="sa-picker-actions">
                     <button className="btn" type="button" onClick={onClose} disabled={busy}>
                         Đóng
                     </button>
                     <button className="btn btn-primary" type="button" disabled={!picked || busy} onClick={confirm}>
-                        {picked ? `Chạy lại bằng ${picked}` : 'Chạy lại bằng …'}
+                        {picked ? `Chạy lại bằng ${pickedName}` : 'Chạy lại bằng …'}
                     </button>
                 </div>
             </div>
@@ -101,8 +130,9 @@ function SwapPicker({
                     project={project ?? ''}
                     onClose={() => setForm(false)}
                     onSaved={(name) => {
+                        // A user/project agent's id is its name.
                         setForm(false);
-                        setCreated(name);
+                        setErr(null);
                         setPicked(name);
                         setTick((t) => t + 1);
                     }}
@@ -113,7 +143,16 @@ function SwapPicker({
     );
 }
 
-export function SubagentControl({ agentKey, compact }: { agentKey: string; compact?: boolean }) {
+export function SubagentControl({
+    agentKey,
+    compact,
+    status
+}: {
+    agentKey: string;
+    compact?: boolean;
+    /** Tree status of the agent (card): a change refetches. */
+    status?: string | null;
+}) {
     const [dto, setDto] = useState<SubagentDto | null>(null);
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
@@ -135,12 +174,24 @@ export function SubagentControl({ agentKey, compact }: { agentKey: string; compa
         };
         setDto(null);
         fetchDto();
-        const un = listen('store-changed', fetchDto);
+        // Refetch only when this agent's or its main thread's transcript changed.
+        const mainKey = `m:${agentKey.split(':')[1] ?? ''}`;
+        const un = listen<{ keys: string[]; tree: boolean }>('store-changed', (e) => {
+            const keys = e.payload?.keys ?? [];
+            if (keys.includes(agentKey) || keys.includes(mainKey)) fetchDto();
+        });
         return () => {
             live = false;
             un.then((f) => f());
         };
     }, [agentKey]);
+    // The card's tree status changed (e.g. running -> done): refetch.
+    const lastStatus = useRef(status);
+    useEffect(() => {
+        if (lastStatus.current === status) return;
+        lastStatus.current = status;
+        load();
+    }, [status, load]);
 
     const run = (action: SubagentAction, agent?: string) => {
         setBusy(true);
@@ -165,7 +216,7 @@ export function SubagentControl({ agentKey, compact }: { agentKey: string; compa
         <span className={cls}>
             {dto.channel === null ? (
                 <>
-                    {dto.paused && <span className="badge">tạm dừng</span>}
+                    {dto.paused && <span className="badge">{dto.stopping ? 'đang chờ dừng' : 'tạm dừng'}</span>}
                     <span className="sa-disabled" title={LOCK_REASON[dto.reason ?? ''] ?? 'Không điều khiển được session này'}>
                         <button className="link-btn" type="button" disabled>
                             {dto.paused ? 'Tiếp tục' : 'Dừng'}
@@ -174,11 +225,23 @@ export function SubagentControl({ agentKey, compact }: { agentKey: string; compa
                 </>
             ) : dto.paused ? (
                 <>
-                    <span className="badge">tạm dừng</span>
-                    <button className="link-btn" type="button" disabled={busy} title="Chạy lại cùng agent, tiếp tục từ chỗ đã dừng" onClick={() => act('resume')}>
+                    {dto.stopping ? (
+                        <span className="badge" title="Đã yêu cầu Claude dừng subagent, nó vẫn đang chạy">
+                            đang chờ dừng
+                        </span>
+                    ) : (
+                        <span className="badge">tạm dừng</span>
+                    )}
+                    <button
+                        className="link-btn"
+                        type="button"
+                        disabled={busy || dto.stopping}
+                        title={dto.stopping ? 'Chờ subagent dừng hẳn' : 'Chạy lại cùng agent, tiếp tục từ chỗ đã dừng'}
+                        onClick={() => act('resume')}
+                    >
                         Tiếp tục
                     </button>
-                    <button className="link-btn" type="button" disabled={busy} onClick={() => setSwap(true)}>
+                    <button className="link-btn" type="button" disabled={busy || dto.stopping} title={dto.stopping ? 'Chờ subagent dừng hẳn' : undefined} onClick={() => setSwap(true)}>
                         Đổi agent
                     </button>
                     <button className="link-btn" type="button" disabled={busy} onClick={cancel}>
@@ -198,6 +261,7 @@ export function SubagentControl({ agentKey, compact }: { agentKey: string; compa
             {err && <span className="setup-error sa-err">{err}</span>}
             {swap && (
                 <SwapPicker
+                    agentKey={agentKey}
                     sid={sid}
                     dto={dto}
                     onClose={() => setSwap(false)}
