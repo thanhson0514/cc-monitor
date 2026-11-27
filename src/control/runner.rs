@@ -281,12 +281,12 @@ impl ManagedSession {
         self.inner.lock().sid.clone()
     }
 
-    /// OS pid of the child (compare with `LiveInfo::pid`).
-    /// Spawn time of the child process.
+    /// Spawn time of the child process (it loads agent files only at start).
     pub fn started(&self) -> std::time::SystemTime {
         self.started
     }
 
+    /// OS pid of the child (compare with `LiveInfo::pid`).
     pub fn pid(&self) -> u32 {
         self.pid
     }

@@ -63,7 +63,8 @@ pub fn plan_action(
     transcript: &str,
     agent: Option<&str>,
 ) -> Result<Vec<Step>, String> {
-    let running = status == "running";
+    // `idle`: pending tools but quiet for a while (long Bash call): still running.
+    let running = matches!(status, "running" | "idle");
     // Managed: ccmon stops the task itself; terminal: main is asked to.
     let stop_and = |msg: String| match ch {
         Channel::Managed => vec![Step::StopTask, Step::Send(msg)],
@@ -158,6 +159,44 @@ pub fn pick_target(
     Err(format!("Không có agent {name} trong danh sách của session"))
 }
 
+/// Run `steps` in order through `exec`, stopping at the first failure, except
+/// for markers: once `StopTask` succeeded the agent is stopped, so a later
+/// failure (telling main) still saves a pause marker — resume, swap or cancel
+/// can then resend. Returns the first error.
+pub fn run_steps(
+    steps: Vec<Step>,
+    mut exec: impl FnMut(&Step) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut stopped = false;
+    let mut marked = false;
+    let mut err: Option<String> = None;
+    for step in &steps {
+        let run = match step {
+            Step::MarkPaused => err.is_none() || stopped,
+            _ => err.is_none(),
+        };
+        if !run {
+            continue;
+        }
+        match exec(step) {
+            Ok(()) => match step {
+                Step::StopTask => stopped = true,
+                Step::MarkPaused => marked = true,
+                _ => {}
+            },
+            Err(e) => {
+                err.get_or_insert(e);
+            }
+        }
+    }
+    if stopped && err.is_some() && !marked {
+        if let Err(e) = exec(&Step::MarkPaused) {
+            err.get_or_insert(e);
+        }
+    }
+    err.map_or(Ok(()), Err)
+}
+
 /// What the store knows about one subagent node.
 struct Info {
     sid: String,
@@ -245,7 +284,16 @@ fn act(ctx: &Ctx, key: &str, action: &str, agent: Option<&str>) -> Result<(), St
         .ok_or("Không tìm thấy lệnh gọi subagent này (agent lồng nhau hoặc trong workflow)")?;
     let sid = i.sid.as_str();
     let paused = is_paused(sid, &i.call.agent_id);
-    // Routed (tmux checked) right before the steps run.
+    // Validate the swap target (catalog scan) before routing, so the tmux
+    // check stays right before the send.
+    let file = if action == "swap" {
+        let name = agent.unwrap_or_default();
+        let ov = effective(&state::load_overlay(sid), &state::load_registry());
+        let items = session_agents(ctx.store.clone(), ctx.root.clone(), sid);
+        Some(pick_target(&items, &ov.disabled_agents, name)?)
+    } else {
+        None
+    };
     let mut route = ctx.route(sid).map_err(reason_text)?;
     let ch = match route {
         Route::Tmux(_) => Channel::Terminal,
@@ -260,11 +308,7 @@ fn act(ctx: &Ctx, key: &str, action: &str, agent: Option<&str>) -> Result<(), St
         &i.transcript.to_string_lossy(),
         agent,
     )?;
-    if action == "swap" {
-        let name = agent.unwrap_or_default();
-        let ov = effective(&state::load_overlay(sid), &state::load_registry());
-        let items = session_agents(ctx.store.clone(), ctx.root.clone(), sid);
-        let file = pick_target(&items, &ov.disabled_agents, name)?;
+    if let Some(file) = file {
         // tmux sessions hot-reload agents; a ccmon child must be restarted.
         if matches!(route, Route::Managed) {
             let mut m = lock(&ctx.manager);
@@ -279,35 +323,17 @@ fn act(ctx: &Ctx, key: &str, action: &str, agent: Option<&str>) -> Result<(), St
             }
         }
     }
-    let mut stopped = false;
-    let mut err: Option<String> = None;
-    for step in steps {
-        match step {
-            Step::StopTask if err.is_none() => {
-                let r = match route {
-                    Route::Managed => lock(&ctx.manager)
-                        .stop_task(sid, &i.call.agent_id)
-                        .map_err(|e| err_text(&e)),
-                    _ => Err("Session không chạy trong ccmon — không dừng được subagent".into()),
-                };
-                match r {
-                    Ok(()) => stopped = true,
-                    Err(e) => err = Some(e),
-                }
-            }
-            Step::Send(t) if err.is_none() => err = send(ctx, &route, sid, &t).err(),
-            // A stopped agent keeps its marker even if telling main failed,
-            // so it can still be resumed.
-            Step::MarkPaused if err.is_none() || stopped => {
-                if let Err(e) = set_marker(sid, &i.call, true) {
-                    err.get_or_insert(e);
-                }
-            }
-            Step::Unmark if err.is_none() => err = set_marker(sid, &i.call, false).err(),
-            _ => {}
-        }
-    }
-    err.map_or(Ok(()), Err)
+    run_steps(steps, |step| match step {
+        Step::StopTask => match route {
+            Route::Managed => lock(&ctx.manager)
+                .stop_task(sid, &i.call.agent_id)
+                .map_err(|e| err_text(&e)),
+            _ => Err("Session không chạy trong ccmon — không dừng được subagent".into()),
+        },
+        Step::Send(t) => send(ctx, &route, sid, t),
+        Step::MarkPaused => set_marker(sid, &i.call, true),
+        Step::Unmark => set_marker(sid, &i.call, false),
+    })
 }
 
 /// The main-thread call behind subagent node `key` (`a:<sid>:<agentId>`);
@@ -421,6 +447,67 @@ mod tests {
         );
         assert!(plan("cancel", "done", false, Channel::Managed).is_err());
         assert!(plan("explode", "running", false, Channel::Managed).is_err());
+    }
+
+    #[test]
+    fn idle_agent_counts_as_running() {
+        assert_eq!(
+            plan("pause", "idle", false, Channel::Managed).unwrap(),
+            vec![
+                Step::StopTask,
+                Step::Send(pause_msg(&call(), Channel::Managed)),
+                Step::MarkPaused
+            ]
+        );
+        assert_eq!(
+            plan("cancel", "idle", false, Channel::Terminal).unwrap(),
+            vec![Step::Send(cancel_msg(&call(), Channel::Terminal))]
+        );
+    }
+
+    /// Runs steps with `fail` failing; returns the executed steps.
+    fn run_with(steps: Vec<Step>, fail: fn(&Step) -> bool) -> (Result<(), String>, Vec<Step>) {
+        let mut done = Vec::new();
+        let r = run_steps(steps, |s| {
+            done.push(s.clone());
+            if fail(s) {
+                Err("x".into())
+            } else {
+                Ok(())
+            }
+        });
+        (r, done)
+    }
+
+    #[test]
+    fn stopped_agent_keeps_a_marker_when_telling_main_fails() {
+        let send = |s: &Step| matches!(s, Step::Send(_));
+        // Cancel: stop ok, message fails -> marker so a retry can resend.
+        let cancel = plan("cancel", "running", false, Channel::Managed).unwrap();
+        let (r, done) = run_with(cancel.clone(), send);
+        assert!(r.is_err());
+        assert_eq!(done.last(), Some(&Step::MarkPaused));
+        // Pause: marker once, from the plan.
+        let pause = plan("pause", "running", false, Channel::Managed).unwrap();
+        let (r, done) = run_with(pause, send);
+        assert!(r.is_err());
+        assert_eq!(done.iter().filter(|s| **s == Step::MarkPaused).count(), 1);
+        // Stop failed: nothing else runs, no marker.
+        let (r, done) = run_with(cancel.clone(), |s| *s == Step::StopTask);
+        assert!(r.is_err());
+        assert_eq!(done, vec![Step::StopTask]);
+        // Success: no extra marker.
+        let (r, done) = run_with(cancel.clone(), |_| false);
+        assert!(r.is_ok());
+        assert_eq!(done, cancel);
+        // Tmux: nothing stopped by ccmon, no marker on failure.
+        let t = plan("cancel", "running", false, Channel::Terminal).unwrap();
+        let (_, done) = run_with(t, send);
+        assert!(!done.contains(&Step::MarkPaused));
+        // Paused cancel: send fails -> keep the existing marker (no Unmark).
+        let p = plan("cancel", "done", true, Channel::Managed).unwrap();
+        let (_, done) = run_with(p, send);
+        assert!(!done.contains(&Step::Unmark));
     }
 
     #[test]
