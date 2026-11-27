@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, Assets, FileEntry, fmtDur, fmtTime, Preview } from './api';
+import { api, Assets, FileEntry, FileHit, fmtDur, fmtTime, Preview } from './api';
 import { highlight, langOf, PathLabel } from './Tools';
 import { Markdown } from './Markdown';
 
@@ -131,12 +131,30 @@ function FileRow({ f, onOpen }: { f: FileEntry; onOpen: (p: string) => void }) {
 export function Sidebar({
     nodeKey,
     refreshTick,
-    onOpenThread
+    onOpenThread,
+    onFocus
 }: {
     nodeKey: string;
     refreshTick: number;
     onOpenThread: (key: string) => void;
+    onFocus: (hit: FileHit) => void;
 }) {
+    // Per-file cursor into `hits`, counted from the newest.
+    // Keyed by the last focused toolId so live-growing `hits` cannot shift it.
+    const [cursor, setCursor] = useState<Record<string, string>>({});
+    const posOf = (path: string, hits: FileHit[]) => {
+        const id = cursor[path];
+        const p = id == null ? -1 : hits.findIndex((h) => h.toolId === id);
+        return p < 0 ? -1 : hits.length - 1 - p; // 0 = newest
+    };
+    const focusNext = (path: string, hits: FileHit[]) => {
+        if (hits.length === 0) return;
+        const cur = posOf(path, hits);
+        const i = cur < 0 || cur + 1 >= hits.length ? 0 : cur + 1;
+        const hit = hits[hits.length - 1 - i];
+        setCursor((c) => ({ ...c, [path]: hit.toolId }));
+        onFocus(hit);
+    };
     const [tab, setTab] = useState<Tab>('user');
     const scope = 'thread' as const;
     const [assets, setAssets] = useState<Assets | null>(null);
@@ -214,21 +232,43 @@ export function Sidebar({
                     <>
                         <div className="sb-section">File đã thao tác</div>
                         {a.files.map((f) => (
-                            <button
-                                key={f.path}
-                                type="button"
-                                className={`frow ${f.exists ? '' : 'missing'}`}
-                                onClick={() => setViewing(f.path)}
-                                title={`${f.path}\n${f.threads.join(', ')}`}
-                            >
-                                <span className={`op op-${f.lastOp}`}>{f.lastOp === 'edit' ? '✎' : f.lastOp === 'write' ? '＋' : '👁'}</span>
-                                <PathLabel path={f.path} />
-                                <span className="frow-meta">
-                                    {f.edits > 0 && <span className="op-edit">✎{f.edits}</span>}
-                                    {f.writes > 0 && <span className="op-write"> ＋{f.writes}</span>}
-                                    {f.reads > 0 && <span className="op-read"> 👁{f.reads}</span>}
-                                </span>
-                            </button>
+                            <div key={f.path} className={`frow ${f.exists ? '' : 'missing'}`}>
+                                <button
+                                    type="button"
+                                    className="frow-open"
+                                    onClick={() => setViewing(f.path)}
+                                    title={`${f.path}\n${f.threads.join(', ')}`}
+                                >
+                                    <span className={`op op-${f.lastOp}`}>{f.lastOp === 'edit' ? '✎' : f.lastOp === 'write' ? '＋' : '👁'}</span>
+                                    <PathLabel path={f.path} />
+                                    <span className="frow-meta">
+                                        {f.edits > 0 && <span className="op-edit">✎{f.edits}</span>}
+                                        {f.writes > 0 && <span className="op-write"> ＋{f.writes}</span>}
+                                        {f.reads > 0 && <span className="op-read"> 👁{f.reads}</span>}
+                                    </span>
+                                </button>
+                                {f.hits.length > 0 && (
+                                    <>
+                                        {posOf(f.path, f.hits) >= 0 && (
+                                            <span className="frow-pos">
+                                                {posOf(f.path, f.hits) + 1}/{f.hits.length}
+                                            </span>
+                                        )}
+                                        <button
+                                            type="button"
+                                            className="frow-focus"
+                                            title="Tìm trong chat"
+                                            aria-label="Tìm trong chat"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                focusNext(f.path, f.hits);
+                                            }}
+                                        >
+                                            ⌖
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         ))}
                         {a.files.length === 0 && <div className="muted pad">Chưa thao tác file nào.</div>}
                         <div className="sb-section">

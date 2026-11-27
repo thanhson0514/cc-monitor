@@ -660,6 +660,7 @@ mod tests {
                 ..Default::default()
             },
             run_id: None,
+            path: "agent-x.jsonl".into(),
         });
         let mut a = App::new(st);
         a.refresh_rows(0);

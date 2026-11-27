@@ -107,8 +107,16 @@ cài trên máy (`PATH`, `~/.local/bin` hoặc `~/.claude/local`) dưới dạng
   MCP server, agent, workflow chỉ cho session đó, qua cờ `--disallowedTools` / `--settings` lúc khởi
   chạy. `settings.json` của bạn không bị sửa; trạng thái riêng của ccmon nằm ở `~/.config/ccmon/` (Windows: `%APPDATA%\ccmon\`)
   (`overlays/<session>.json`, `defaults.json`, `registry.json`).
-- **Session ở terminal chỉ xem:** session đang mở ở terminal không bao giờ bị tiếp quản; ô soạn bị khoá
-  (“Session đang chạy ở terminal — chỉ xem”).
+- **Session ở terminal (tmux):** session mở ở terminal không bao giờ bị tiếp quản, nhưng nếu chạy trong tmux
+  bạn có thể gõ vào đó từ ccmon (prompt, `/model`, `/effort`, Dừng = Esc). Chế độ quyền, agent chính và
+  capability (⚙) là cấu hình lúc khởi động, cố định với session khởi động ở terminal. ccmon từ chối gửi khi
+  pane đang hiện hộp thoại duyệt quyền hay lựa chọn (phím Enter sẽ trả lời nó); chữ bạn đang gõ dở trong
+  pane đó cùng lúc sẽ bị trộn với nội dung ccmon gửi. Ngoài tmux, hoặc bị treo bằng Ctrl+Z, ô soạn bị khoá
+  kèm lý do.
+- **Điều khiển subagent:** Dừng, Tiếp tục, Đổi agent hoặc Hủy subagent từ header hay thẻ của nó. Ở session
+  terminal, Dừng và Hủy là nhờ Claude dừng subagent (subagent tiền cảnh bị ngắt bằng Esc), nên ccmon không
+  xác nhận được; thẻ hiện “đang chờ dừng” tới khi nó dừng hẳn. Đổi sang agent vừa tạo hoặc vừa sửa ở session
+  do ccmon chạy sẽ khởi động lại session, làm dừng các tác vụ nền khác của nó; hộp chọn báo trước.
 - **Nhắc `@agent`:** gõ `@` trong ô soạn để chọn agent; tham chiếu được tô sáng và liệt kê dưới prompt.
 
 ### Trung tâm điều khiển: Thư viện và Agents
@@ -120,7 +128,7 @@ cài trên máy (`PATH`, `~/.local/bin` hoặc `~/.claude/local`) dưới dạng
   ở mọi session chạy từ ccmon, file và lịch sử vẫn giữ nguyên.
 - **Giới hạn, nói thẳng:** skill và agent bị tắt sẽ bị chặn khi gọi, nhưng Claude Code vẫn liệt kê
   chúng cho model; ở session chạy từ ccmon, tool cần duyệt bị từ chối (chế độ `-p` không có hộp thoại
-  duyệt); session đang mở ở terminal chỉ xem.
+  duyệt); session đang mở ở terminal chỉ điều khiển được khi chạy trong tmux.
 
 ## Build từ mã nguồn
 

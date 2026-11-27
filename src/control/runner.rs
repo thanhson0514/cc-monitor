@@ -141,6 +141,8 @@ pub struct ManagedSession {
     stdin: Option<ChildStdin>,
     inner: Arc<Inner>,
     req_seq: u64,
+    /// When the child was spawned (it loads agent files only at start).
+    started: std::time::SystemTime,
 }
 
 impl ManagedSession {
@@ -203,6 +205,7 @@ impl ManagedSession {
             stdin,
             inner,
             req_seq: 0,
+            started: std::time::SystemTime::now(),
         })
     }
 
@@ -242,6 +245,33 @@ impl ManagedSession {
         }))
     }
 
+    /// Stop one background subagent task (stream-json control_request).
+    pub fn stop_task(&mut self, task_id: &str) -> io::Result<()> {
+        self.req_seq += 1;
+        let id = format!("ccmon-stop-{}-{}", self.pid, self.req_seq);
+        self.write_line(&serde_json::json!({
+            "type": "control_request",
+            "request_id": id,
+            "request": {"subtype": "stop_task", "task_id": task_id}
+        }))
+    }
+
+    /// Write a user line whatever the state; claude queues it when a turn is
+    /// running and answers it in the same turn. `Busy` only if currently `Idle`.
+    pub fn send_queued(&mut self, text: &str) -> io::Result<()> {
+        let st = self.state();
+        if matches!(st, RunState::Exited { .. }) {
+            return Err(io::Error::new(io::ErrorKind::BrokenPipe, "session exited"));
+        }
+        if st == RunState::Idle {
+            self.inner.update(|s| s.state = RunState::Busy);
+        }
+        self.write_line(&serde_json::json!({
+            "type": "user",
+            "message": {"role": "user", "content": [{"type": "text", "text": text}]}
+        }))
+    }
+
     pub fn state(&self) -> RunState {
         self.inner.lock().state.clone()
     }
@@ -249,6 +279,11 @@ impl ManagedSession {
     /// From the first stdout event carrying `session_id` (or `system/init`).
     pub fn session_id(&self) -> Option<String> {
         self.inner.lock().sid.clone()
+    }
+
+    /// Spawn time of the child process (it loads agent files only at start).
+    pub fn started(&self) -> std::time::SystemTime {
+        self.started
     }
 
     /// OS pid of the child (compare with `LiveInfo::pid`).
@@ -658,6 +693,20 @@ impl Manager {
         }
     }
 
+    pub fn stop_task(&mut self, sid: &str, task_id: &str) -> Result<(), ControlError> {
+        match self.sessions.get_mut(sid) {
+            Some(e) => Ok(e.s.stop_task(task_id)?),
+            None => Err(ControlError::Io("session not managed".into())),
+        }
+    }
+
+    pub fn send_queued(&mut self, sid: &str, text: &str) -> Result<(), ControlError> {
+        match self.sessions.get_mut(sid) {
+            Some(e) => Ok(e.s.send_queued(text)?),
+            None => Err(ControlError::Io("session not managed".into())),
+        }
+    }
+
     /// Kill a managed session. Returns false if it was not managed.
     pub fn stop(&mut self, sid: &str) -> bool {
         let Some(e) = self.sessions.remove(sid) else {
@@ -696,6 +745,11 @@ impl Manager {
 
     pub fn pid(&self, sid: &str) -> Option<u32> {
         self.sessions.get(sid).map(|e| e.s.pid())
+    }
+
+    /// Spawn time of the session's current process.
+    pub fn started(&self, sid: &str) -> Option<std::time::SystemTime> {
+        self.sessions.get(sid).map(|e| e.s.started())
     }
 
     /// Overlay the session's current process was launched with.
@@ -1051,6 +1105,32 @@ done
         assert_eq!(v["request"]["subtype"], "interrupt");
         assert!(v["request_id"].as_str().is_some_and(|s| !s.is_empty()));
         wait_for("idle", || s.state() == RunState::Idle);
+    }
+
+    #[test]
+    fn stop_task_writes_control_request() {
+        let f = fake(false);
+        let mut s = ManagedSession::spawn(f.spec(Some("t1"), &Overlay::default())).unwrap();
+        s.stop_task("aa18bd04354ab1013").unwrap();
+        wait_for("line", || f.stdin_lines().len() == 1);
+        let v: serde_json::Value = serde_json::from_str(&f.stdin_lines()[0]).unwrap();
+        assert_eq!(v["type"], "control_request");
+        assert_eq!(v["request"]["subtype"], "stop_task");
+        assert_eq!(v["request"]["task_id"], "aa18bd04354ab1013");
+        assert!(v["request_id"].as_str().unwrap().starts_with("ccmon-stop-"));
+    }
+
+    #[test]
+    fn send_queued_while_busy() {
+        let f = fake(false);
+        let mut s = ManagedSession::spawn(f.spec(Some("q1"), &Overlay::default())).unwrap();
+        s.send("a").unwrap();
+        assert_eq!(s.state(), RunState::Busy);
+        s.send_queued("b").unwrap();
+        wait_for("lines", || f.stdin_lines().len() == 2);
+        let v: serde_json::Value = serde_json::from_str(&f.stdin_lines()[1]).unwrap();
+        assert_eq!(v["type"], "user");
+        assert_eq!(v["message"]["content"][0]["text"], "b");
     }
 
     #[test]

@@ -595,6 +595,12 @@ impl Thread {
             .find_map(|t| self.bg.get(t).cloned())
     }
 
+    /// State of the background task launched by tool_use `tool_use_id` (e.g. an
+    /// async Agent call): `Killed` once its stop notice reached this thread.
+    pub fn bg_state_for_tool(&self, tool_use_id: &str) -> Option<BgState> {
+        self.bg.by_tool_use(tool_use_id).map(|t| t.state)
+    }
+
     /// The session closed: background tasks without a notice have an unknown outcome.
     pub fn finalize_bg_unknown(&mut self) {
         if self.bg.finalize_unknown(self.last_ts) {
@@ -992,6 +998,21 @@ mod tests {
         let a = tool(&items, "t2").bg.as_ref().unwrap();
         assert_eq!((a.kind, a.state), (BgKind::Agent, BgState::Running));
         assert_eq!(a.label, "Audit");
+    }
+
+    #[test]
+    fn bg_state_by_tool_use_follows_killed_notice() {
+        let mut lines = bg_lines();
+        let t = thread_from(&lines);
+        assert_eq!(t.bg_state_for_tool("t2"), Some(BgState::Running));
+        assert_eq!(t.bg_state_for_tool("nope"), None);
+        let killed = NOTICE_A
+            .replace("bgA", "ag1")
+            .replace("t1", "t2")
+            .replace("completed", "killed");
+        lines.push(notice_line("E", "D", "2026-11-25T00:00:00.130Z", &killed));
+        let t = thread_from(&lines);
+        assert_eq!(t.bg_state_for_tool("t2"), Some(BgState::Killed));
     }
 
     #[test]

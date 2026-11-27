@@ -118,8 +118,17 @@ conversation is still read from the transcript, so everything else works as befo
   skills, plugins, MCP servers, agents and workflows off for that session only, via
   `--disallowedTools` / `--settings` launch flags. Your `settings.json` is never changed; ccmon's own
   state lives in `~/.config/ccmon/` on Linux, `%APPDATA%\ccmon\` on Windows (`overlays/<session>.json`, `defaults.json`, `registry.json`).
-- **Terminal sessions stay read-only:** a session that is open in a terminal is never taken over;
-  its composer is locked ("Session đang chạy ở terminal — chỉ xem").
+- **Terminal sessions in tmux:** a session open in a terminal is never taken over, but if it runs in tmux
+  you can type into it from ccmon (prompts, `/model`, `/effort`, Stop as Esc). Permission mode, main
+  agent and ⚙ capabilities are launch settings, fixed for a session started in a terminal. ccmon refuses
+  to send while the pane shows a permission or selection dialog (the Enter would answer it); text you
+  are typing in that pane at the same moment gets mixed with ccmon's. Outside tmux, or suspended
+  with Ctrl+Z, the composer is locked with the reason.
+- **Subagent controls:** pause, continue, swap or cancel a subagent from its header or card. In a
+  terminal session, pause and cancel ask Claude to stop the subagent (a foreground one is interrupted
+  with Esc), so ccmon cannot confirm the stop; the card reads "đang chờ dừng" until it has stopped.
+  Swapping to a newly created or edited agent in a session run from ccmon restarts that session, which
+  stops its other background tasks; the picker warns first.
 - **`@agent` mentions:** type `@` in the composer to pick an agent; mentions are highlighted and listed under the prompt.
 
 ### Control center: Library and Agents
@@ -131,7 +140,7 @@ conversation is still read from the transcript, so everything else works as befo
   workflow in every session run from ccmon, keeping its file and history.
 - **Limits, honestly:** disabled skills and agents are blocked when called, but Claude Code still lists
   them to the model; in sessions run from ccmon, tools that need approval are denied (no approval
-  dialog in `-p` mode); sessions open in a terminal stay view-only.
+  dialog in `-p` mode); sessions open in a terminal can only be driven when they run in tmux.
 
 ## How it works
 

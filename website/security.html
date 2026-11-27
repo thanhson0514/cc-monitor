@@ -140,7 +140,7 @@
     <ul>
       <li>Vulnerabilities in <b>Claude Code</b> itself — please report those to Anthropic through its own disclosure process.</li>
       <li>Vulnerabilities in Tauri, WebView2, WebKitGTK or other dependencies, unless ccmon uses them in an unsafe way — please report upstream (and let us know if a ccmon update is needed).</li>
-      <li>Behaviour that works as documented, for example the <code>bypassPermissions</code> mode letting an agent run any tool, or a terminal session staying view-only.</li>
+      <li>Behaviour that works as documented, for example the <code>bypassPermissions</code> mode letting an agent run any tool, or a terminal session outside tmux staying view-only (sessions in tmux can be prompted from ccmon, by pasting into the pane as if you typed it).</li>
       <li>Attacks that require an attacker who can already write to your home directory or run code as your user.</li>
     </ul>
   </div>
@@ -155,7 +155,7 @@
     <ul>
       <li>Lỗ hổng của chính <b>Claude Code</b> — vui lòng báo cho Anthropic theo quy trình công bố của họ.</li>
       <li>Lỗ hổng của Tauri, WebView2, WebKitGTK hay phụ thuộc khác, trừ khi ccmon dùng chúng thiếu an toàn — vui lòng báo cho dự án gốc (và cho chúng tôi biết nếu ccmon cần cập nhật).</li>
-      <li>Hành vi đúng như tài liệu, ví dụ chế độ <code>bypassPermissions</code> cho agent chạy mọi tool, hay session ở terminal chỉ được xem.</li>
+      <li>Hành vi đúng như tài liệu, ví dụ chế độ <code>bypassPermissions</code> cho agent chạy mọi tool, hay session ở terminal ngoài tmux chỉ được xem (session trong tmux gửi prompt được từ ccmon, bằng cách dán vào pane như bạn gõ).</li>
       <li>Tấn công đòi hỏi kẻ tấn công đã ghi được vào thư mục home của bạn hoặc chạy code dưới tài khoản của bạn.</li>
     </ul>
   </div>

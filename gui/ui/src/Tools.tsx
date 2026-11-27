@@ -304,7 +304,7 @@ export function ToolCard({ tool, threadKey, now }: { tool: ToolItem; threadKey: 
             const lim = input.limit as number | undefined;
             if (off || lim) badge = <span className="tbadge">dòng {off ?? 1}–{(off ?? 1) + (lim ?? 0)}</span>;
             if (path && isImagePath(path) && tool.state !== 'error') {
-                body = <InlineImage path={path} />;
+                body = <InlineImage path={path} version={tool.state} />;
                 showOutput = false;
             }
             break;
@@ -361,7 +361,7 @@ export function ToolCard({ tool, threadKey, now }: { tool: ToolItem; threadKey: 
     }
 
     return (
-        <div className={`tcard tcard-${tool.state}`}>
+        <div className={`tcard tcard-${tool.state}`} data-tool-id={tool.id}>
             <div className="tcard-head">
                 <span className={`tdot st-${tool.state}`}>●</span>
                 <span className="tname">{tool.name}</span>

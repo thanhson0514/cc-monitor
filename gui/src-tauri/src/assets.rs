@@ -194,6 +194,16 @@ pub struct FileEntry {
     pub source: Option<String>,
 }
 
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct FileHit {
+    pub thread_key: String,
+    pub tool_id: String,
+    pub idx: usize,
+    pub ts: Option<i64>,
+    pub op: String,
+}
+
 #[derive(Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TouchedFile {
@@ -205,6 +215,7 @@ pub struct TouchedFile {
     pub last_op: String,
     pub threads: Vec<String>,
     pub exists: bool,
+    pub hits: Vec<FileHit>,
 }
 
 #[derive(Serialize)]
@@ -318,7 +329,7 @@ pub fn collect(threads: Vec<ThreadRef>, tmp_dir: Option<PathBuf>) -> Assets {
                     .push(entry(&f.path, kind, f.ts, Some(tr.label.clone())));
             }
         }
-        for it in tr.thread.items().iter() {
+        for (idx, it) in tr.thread.items().iter().enumerate() {
             let Item::Tool(t) = it else { continue };
             let path = t
                 .input
@@ -344,6 +355,13 @@ pub fn collect(threads: Vec<ThreadRef>, tmp_dir: Option<PathBuf>) -> Assets {
                         "edit" => e.edits += 1,
                         _ => e.writes += 1,
                     }
+                    e.hits.push(FileHit {
+                        thread_key: tr.key.clone(),
+                        tool_id: t.id.clone(),
+                        idx,
+                        ts: t.started,
+                        op: op.to_string(),
+                    });
                     if t.started >= e.last_ts {
                         e.last_ts = t.started;
                         e.last_op = op.to_string();
@@ -374,6 +392,13 @@ pub fn collect(threads: Vec<ThreadRef>, tmp_dir: Option<PathBuf>) -> Assets {
                         ..Default::default()
                     });
                     e.edits += 1;
+                    e.hits.push(FileHit {
+                        thread_key: tr.key.clone(),
+                        tool_id: t.id.clone(),
+                        idx,
+                        ts: t.started,
+                        op: "edit".into(),
+                    });
                     if t.started >= e.last_ts {
                         e.last_ts = t.started;
                         e.last_op = "edit".into();
@@ -434,6 +459,7 @@ pub fn collect(threads: Vec<ThreadRef>, tmp_dir: Option<PathBuf>) -> Assets {
     }
     for f in touched.values_mut() {
         f.exists = Path::new(&f.path).exists();
+        f.hits.sort_by_key(|h| h.ts);
     }
     a.files = touched.into_values().collect();
     a.files.sort_by_key(|f| std::cmp::Reverse(f.last_ts));
@@ -614,5 +640,66 @@ mod tests {
         );
         assert_eq!(preview(d.path().to_str().unwrap()).entries, vec!["a.txt"]);
         assert_eq!(preview("/no/such/file").kind, "missing");
+    }
+
+    #[test]
+    fn touched_file_hits_in_order() {
+        use cc_monitor::event::parse_line;
+        let mk = |lines: &[&str]| {
+            let mut t = Thread::new();
+            for l in lines {
+                t.push(parse_line(l).expect(l));
+            }
+            t
+        };
+        let tool = |uuid: &str, parent: &str, ts: &str, id: &str, name: &str| {
+            format!(
+                r#"{{"type":"assistant","uuid":"{uuid}","parentUuid":"{parent}","timestamp":"2026-11-25T00:00:{ts}.000Z","message":{{"content":[{{"type":"tool_use","id":"{id}","name":"{name}","input":{{"file_path":"/a.rs"}}}}]}}}}"#
+            )
+        };
+        let mut main = mk(&[
+            &tool("A", "", "01", "r1", "Read"),
+            &tool("B", "A", "05", "e1", "Edit"),
+        ]);
+        let mut agent = mk(&[&tool("C", "", "03", "r2", "Read")]);
+        let a = collect(
+            vec![
+                ThreadRef {
+                    key: "m:s".into(),
+                    label: "main".into(),
+                    thread: &mut main,
+                },
+                ThreadRef {
+                    key: "a:s:x".into(),
+                    label: "agent".into(),
+                    thread: &mut agent,
+                },
+            ],
+            None,
+        );
+        let f = a.files.iter().find(|f| f.path == "/a.rs").unwrap();
+        let got: Vec<_> = f
+            .hits
+            .iter()
+            .map(|h| (h.thread_key.as_str(), h.tool_id.as_str(), h.op.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("m:s", "r1", "read"),
+                ("a:s:x", "r2", "read"),
+                ("m:s", "e1", "edit")
+            ]
+        );
+        assert!(f.hits.windows(2).all(|w| w[0].ts <= w[1].ts));
+        let idx_of = |t: &mut Thread, id: &str| {
+            t.items()
+                .iter()
+                .position(|i| matches!(i, Item::Tool(x) if x.id == id))
+                .unwrap()
+        };
+        assert_eq!(f.hits[0].idx, idx_of(&mut main, "r1"));
+        assert_eq!(f.hits[2].idx, idx_of(&mut main, "e1"));
+        assert_eq!(f.hits[1].idx, idx_of(&mut agent, "r2"));
     }
 }

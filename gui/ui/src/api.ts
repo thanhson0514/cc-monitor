@@ -25,6 +25,8 @@ export interface LinkInfo {
     status: Status | null;
     progress: [number, number] | null;
     report: string | null;
+    /** ccmon holds a pause marker for this subagent. */
+    paused: boolean;
 }
 
 export interface BgTask {
@@ -152,6 +154,14 @@ export interface FileEntry {
     source: string | null;
 }
 
+export interface FileHit {
+    threadKey: string;
+    toolId: string;
+    idx: number;
+    ts: number | null;
+    op: string;
+}
+
 export interface TouchedFile {
     path: string;
     reads: number;
@@ -161,6 +171,7 @@ export interface TouchedFile {
     lastOp: string;
     threads: string[];
     exists: boolean;
+    hits: FileHit[];
 }
 
 export interface LogEntry {
@@ -309,11 +320,24 @@ export type RunState =
     | { kind: 'restarting' }
     | { kind: 'exited'; code: number | null; stderrTail: string };
 
+/** Why a session cannot be controlled (`tmux` reasons come from the pane check). */
+export type ControlReason =
+    | 'liveElsewhere'
+    | 'claudeNotFound'
+    | 'notInTmux'
+    | 'paneGone'
+    | 'notForeground'
+    | 'unsupported';
+
+/** How ccmon reaches the session: its own `-p` child, or the terminal's tmux pane. */
+export type ControlChannel = 'managed' | 'tmux';
+
 export interface ControlDto {
     overlay: Overlay;
     runState: RunState | null;
     canControl: boolean;
-    reason: 'liveElsewhere' | 'claudeNotFound' | null;
+    channel: ControlChannel | null;
+    reason: ControlReason | null;
     models: string[];
     /** Display label per `models` entry (same formatting as the status bar). */
     modelLabels: string[];
@@ -322,6 +346,29 @@ export interface ControlDto {
     registryAgents: string[];
     registryWorkflows: string[];
 }
+
+/** The main-thread Agent call behind a subagent. */
+export interface SubagentCall {
+    agentId: string;
+    toolUseId: string;
+    agentType: string;
+    description: string;
+    prompt: string;
+    background: boolean;
+}
+
+export interface SubagentDto {
+    call: SubagentCall;
+    status: 'running' | 'done' | 'error' | 'idle';
+    /** ccmon paused it and can resume or swap it. */
+    paused: boolean;
+    /** Paused, but the agent has not stopped yet (main was asked to stop it). */
+    stopping: boolean;
+    channel: ControlChannel | null;
+    reason: ControlReason | null;
+}
+
+export type SubagentAction = 'pause' | 'resume' | 'swap' | 'cancel';
 
 export const EMPTY_OVERLAY: Overlay = {
     model: null,
@@ -367,6 +414,12 @@ export const api = {
     interrupt: (sid: string) => invoke<void>('interrupt', { sid }),
     stopManaged: (sid: string) => invoke<boolean>('stop_managed', { sid }),
     projects: () => invoke<string[]>('list_projects'),
+    /** `null` for nested/workflow agents (no call on main). */
+    subagent: (key: string) => invoke<SubagentDto | null>('get_subagent', { key }),
+    subagentAction: (key: string, action: SubagentAction, agent?: string) =>
+        invoke<void>('subagent_action', { key, action, agent: agent ?? null }),
+    /** Would swapping to `agent` restart the session (new/edited agent on a ccmon-run session)? */
+    subagentSwapCheck: (key: string, agent: string) => invoke<{ restart: boolean }>('subagent_swap_check', { key, agent }),
     catalog: (sid: string | null) => invoke<Capability[]>('get_catalog', { sid }),
     listAgents: (sid: string | null, cwd: string | null, light = false) => invoke<AgentItem[]>('list_agents', { sid, cwd, light }),
     listWorkflows: (sid: string | null, cwd: string | null) => invoke<AgentItem[]>('list_workflows', { sid, cwd }),

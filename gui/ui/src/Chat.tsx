@@ -2,6 +2,7 @@ import { memo, useState } from 'react';
 import { Draft, DraftBlock, fmtDur, fmtTime, fmtTokens, Item, ThreadView } from './api';
 import { Markdown } from './Markdown';
 import { InlineImage, usePathOpener } from './open';
+import { SubagentControl } from './SubagentControl';
 import { ToolCard, ToolItem } from './Tools';
 
 type Part = Exclude<Item, { type: 'prompt' } | { type: 'system' } | { type: 'compact' }>;
@@ -148,7 +149,7 @@ function AgentCard({ tool, onOpen }: { tool: ToolItem; onOpen: (key: string) => 
     const status = link.status ?? (tool.state === 'running' ? 'running' : 'idle');
     const isWf = link.kind === 'workflow';
     return (
-        <div className={`agent-card st-border-${status}`}>
+        <div className={`agent-card st-border-${status}`} data-tool-id={tool.id}>
             <div className="agent-card-head">
                 <span className="agent-card-title">
                     {isWf ? '⚙ Giao cho Workflow' : '↪ Giao cho Agent'} <b>{link.label ?? tool.summary}</b>
@@ -157,6 +158,10 @@ function AgentCard({ tool, onOpen }: { tool: ToolItem; onOpen: (key: string) => 
                     {STATE_ICON[status]} {status}
                     {link.progress ? ` · ${link.progress[0]}/${link.progress[1]}` : ''}
                 </span>
+                {/* Controls only for a live or paused agent: a finished one has none (no polling). */}
+                {link.kind === 'agent' && link.key && (status === 'running' || status === 'idle' || link.paused) && (
+                    <SubagentControl agentKey={link.key} status={link.status} compact />
+                )}
                 {link.key && (
                     <button className="link-btn" type="button" onClick={() => onOpen(link.key!)}>
                         Mở luồng →

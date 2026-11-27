@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { api, Draft, fmtDur, fmtTokens, HistoryProject, RunState, StatusInfo, ThreadView, TreeRow } from './api';
+import { api, Draft, FileHit, fmtDur, fmtTokens, HistoryProject, RunState, StatusInfo, ThreadView, TreeRow } from './api';
 import { OpenPath } from './open';
 import { Chat } from './Chat';
 import { Sidebar, Viewer } from './Sidebar';
@@ -8,6 +8,7 @@ import { ChangesPanel } from './Changes';
 import { Setup } from './Setup';
 import { Library } from './Library';
 import { Agents } from './Agents';
+import { SubagentControl } from './SubagentControl';
 import { Composer } from './Composer';
 import { AppHeader, AssetsIcon, DiffIcon, HeadIconBtn, Page, PAGE_TITLE } from './Header';
 import logo from './assets/logo.png';
@@ -777,6 +778,39 @@ export default function App() {
         setSelected(key);
     };
 
+    // Jump to a tool card (file hit): load enough history to include it, then scroll + flash.
+    const pendingFocus = useRef<FileHit | null>(null);
+    const [focusTick, setFocusTick] = useState(0);
+    const flashTimer = useRef<ReturnType<typeof setTimeout>>();
+    useEffect(() => {
+        if (pendingFocus.current && pendingFocus.current.threadKey !== selected) pendingFocus.current = null;
+    }, [selected]);
+    const focusTool = (hit: FileHit) => {
+        pendingFocus.current = hit;
+        if (hit.threadKey !== selected) select(hit.threadKey);
+        else setFocusTick((n) => n + 1);
+    };
+    useEffect(() => {
+        const hit = pendingFocus.current;
+        if (!hit || !view || view.key !== hit.threadKey || selected !== hit.threadKey) return;
+        if (view.total - view.items.length > hit.idx) {
+            const need = view.total - hit.idx + 20;
+            if (need > tail) setTail(need);
+            return;
+        }
+        pendingFocus.current = null;
+        stickBottom.current = false;
+        setFollowing(false);
+        const el = content.current?.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(hit.toolId)}"]`);
+        if (!el) return;
+        el.scrollIntoView({ block: 'center' });
+        clearTimeout(flashTimer.current);
+        document.querySelectorAll('.flash').forEach((n) => n.classList.remove('flash'));
+        void el.offsetWidth; // force reflow so the animation restarts
+        el.classList.add('flash');
+        flashTimer.current = setTimeout(() => el.classList.remove('flash'), 1500);
+    }, [view, focusTick, selected, tail]);
+
     const back = () => {
         const prev = history[history.length - 1];
         if (!prev) return;
@@ -881,6 +915,7 @@ export default function App() {
                                       : row?.label ?? view?.title ?? 'ccmon'}
                             </span>
                             {row && !newCwd && !starting && <span className={`badge st-${row.status}`}>{row.status}</span>}
+                            {view?.kind === 'agent' && view.key === selected && !starting && !newCwd && <SubagentControl key={view.key} agentKey={view.key} />}
                             {!following && (
                                 <button
                                     className="follow-btn"
@@ -954,12 +989,12 @@ export default function App() {
                 {newCwd ? (
                     <Composer key={`new:${newCwd}`} sid={null} cwd={newCwd} onStarted={started} />
                 ) : (
-                    composerSid && <Composer key={composerSid} sid={composerSid} cwd={starting ? starting.cwd : null} current={status} />
+                    composerSid && <Composer key={composerSid} sid={composerSid} cwd={starting ? starting.cwd : null} current={status} tmuxPane={mainRow?.tmux ?? null} running={mainRow?.status === 'running'} />
                 )}
                 <StatusBar s={status} />
             </main>
             {page === 'thread' && panel === 'assets' && panelKey && (
-                <Sidebar nodeKey={panelKey} refreshTick={Math.floor(assetTick / 8)} onOpenThread={select} />
+                <Sidebar nodeKey={panelKey} refreshTick={Math.floor(assetTick / 8)} onOpenThread={select} onFocus={focusTool} />
             )}
             {page === 'thread' && panel === 'changes' && panelKey && <ChangesPanel nodeKey={panelKey} refreshTick={Math.floor(assetTick / 8)} initial={startup.diff} />}
             {setup && (

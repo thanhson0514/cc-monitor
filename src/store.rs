@@ -68,6 +68,8 @@ pub struct AgentState {
     pub meta: AgentMeta,
     pub run_id: Option<String>,
     pub mtime: i64,
+    /// Agent transcript file (`<sid>/subagents/agent-<id>.jsonl`).
+    pub path: PathBuf,
 }
 
 pub struct Session {
@@ -158,6 +160,7 @@ impl Store {
                 agent_id,
                 meta,
                 run_id,
+                path,
             } => {
                 if let Some(s) = self.sessions.get_mut(&sid) {
                     s.agents.entry(agent_id).or_insert(AgentState {
@@ -165,6 +168,7 @@ impl Store {
                         meta,
                         run_id,
                         mtime: 0,
+                        path,
                     });
                 }
             }
@@ -327,6 +331,12 @@ impl Store {
         } else {
             Status::Idle
         }
+    }
+
+    /// Status of subagent `aid` as its tree row shows it, without building the tree.
+    pub fn agent_status_of(&self, sid: &str, aid: &str, now: i64) -> Option<Status> {
+        let a = self.sessions.get(sid)?.agents.get(aid)?;
+        Some(self.agent_status(sid, a, now))
     }
 
     /// Flattened tree: sessions (most recently written first) → agents/workflows.
@@ -603,12 +613,14 @@ mod tests {
                 ..Default::default()
             },
             run_id: None,
+            path: "agent-x.jsonl".into(),
         });
         st.apply(Msg::Agent {
             sid: "s".into(),
             agent_id: "w1".into(),
             meta: AgentMeta::default(),
             run_id: Some("wf_1".into()),
+            path: "agent-w1.jsonl".into(),
         });
         st
     }
@@ -649,6 +661,23 @@ mod tests {
             events: vec![ev(r#"{"type":"user","uuid":"b","parentUuid":"a","message":{"content":[{"type":"tool_result","tool_use_id":"h","content":"ok"}]}}"#)],
         });
         assert_eq!(st.tree(1500)[1].status, Status::Done);
+    }
+
+    #[test]
+    fn agent_status_of_matches_tree_row() {
+        let st = store();
+        for now in [1000, 1000 + AGENT_IDLE_DONE_MS + 1, 1000 + ACTIVE_MS + 1] {
+            let rows = st.tree(now);
+            for (aid, row) in [("x", &rows[1]), ("w1", &rows[3])] {
+                assert_eq!(
+                    st.agent_status_of("s", aid, now),
+                    Some(row.status),
+                    "{aid} {now}"
+                );
+            }
+        }
+        assert_eq!(st.agent_status_of("s", "nope", 0), None);
+        assert_eq!(st.agent_status_of("zz", "x", 0), None);
     }
 
     #[test]
