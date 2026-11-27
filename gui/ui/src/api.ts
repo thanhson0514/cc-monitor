@@ -152,6 +152,14 @@ export interface FileEntry {
     source: string | null;
 }
 
+export interface FileHit {
+    threadKey: string;
+    toolId: string;
+    idx: number;
+    ts: number | null;
+    op: string;
+}
+
 export interface TouchedFile {
     path: string;
     reads: number;
@@ -161,6 +169,7 @@ export interface TouchedFile {
     lastOp: string;
     threads: string[];
     exists: boolean;
+    hits: FileHit[];
 }
 
 export interface LogEntry {

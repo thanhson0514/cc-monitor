@@ -149,7 +149,7 @@ function AgentCard({ tool, onOpen }: { tool: ToolItem; onOpen: (key: string) => 
     const status = link.status ?? (tool.state === 'running' ? 'running' : 'idle');
     const isWf = link.kind === 'workflow';
     return (
-        <div className={`agent-card st-border-${status}`}>
+        <div className={`agent-card st-border-${status}`} data-tool-id={tool.id}>
             <div className="agent-card-head">
                 <span className="agent-card-title">
                     {isWf ? '⚙ Giao cho Workflow' : '↪ Giao cho Agent'} <b>{link.label ?? tool.summary}</b>

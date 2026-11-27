@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { api, Draft, fmtDur, fmtTokens, HistoryProject, RunState, StatusInfo, ThreadView, TreeRow } from './api';
+import { api, Draft, FileHit, fmtDur, fmtTokens, HistoryProject, RunState, StatusInfo, ThreadView, TreeRow } from './api';
 import { OpenPath } from './open';
 import { Chat } from './Chat';
 import { Sidebar, Viewer } from './Sidebar';
@@ -778,6 +778,32 @@ export default function App() {
         setSelected(key);
     };
 
+    // Jump to a tool card (file hit): load enough history to include it, then scroll + flash.
+    const pendingFocus = useRef<FileHit | null>(null);
+    const [focusTick, setFocusTick] = useState(0);
+    const focusTool = (hit: FileHit) => {
+        pendingFocus.current = hit;
+        if (hit.threadKey !== selected) select(hit.threadKey);
+        else setFocusTick((n) => n + 1);
+    };
+    useEffect(() => {
+        const hit = pendingFocus.current;
+        if (!hit || !view || view.key !== hit.threadKey || selected !== hit.threadKey) return;
+        if (view.total - view.items.length > hit.idx) {
+            const need = view.total - hit.idx + 20;
+            if (need > tail) setTail(need);
+            return;
+        }
+        pendingFocus.current = null;
+        stickBottom.current = false;
+        setFollowing(false);
+        const el = content.current?.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(hit.toolId)}"]`);
+        if (!el) return;
+        el.scrollIntoView({ block: 'center' });
+        el.classList.add('flash');
+        setTimeout(() => el.classList.remove('flash'), 1500);
+    }, [view, focusTick, selected, tail]);
+
     const back = () => {
         const prev = history[history.length - 1];
         if (!prev) return;
@@ -961,7 +987,7 @@ export default function App() {
                 <StatusBar s={status} />
             </main>
             {page === 'thread' && panel === 'assets' && panelKey && (
-                <Sidebar nodeKey={panelKey} refreshTick={Math.floor(assetTick / 8)} onOpenThread={select} />
+                <Sidebar nodeKey={panelKey} refreshTick={Math.floor(assetTick / 8)} onOpenThread={select} onFocus={focusTool} />
             )}
             {page === 'thread' && panel === 'changes' && panelKey && <ChangesPanel nodeKey={panelKey} refreshTick={Math.floor(assetTick / 8)} initial={startup.diff} />}
             {setup && (

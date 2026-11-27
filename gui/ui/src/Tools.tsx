@@ -361,7 +361,7 @@ export function ToolCard({ tool, threadKey, now }: { tool: ToolItem; threadKey: 
     }
 
     return (
-        <div className={`tcard tcard-${tool.state}`}>
+        <div className={`tcard tcard-${tool.state}`} data-tool-id={tool.id}>
             <div className="tcard-head">
                 <span className={`tdot st-${tool.state}`}>●</span>
                 <span className="tname">{tool.name}</span>
