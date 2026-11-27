@@ -94,7 +94,7 @@
           <li data-i18n="c.c3"><code>@agent</code> mentions are highlighted and listed under the prompt</li>
         </ul>
         <ul class="notes">
-          <li data-i18n="c.n1">Sessions open in a terminal stay view-only; ccmon never takes them over.</li>
+          <li data-i18n="c.n1">ccmon never takes over a session open in a terminal. If it runs in tmux you can prompt it from ccmon as if typing there; otherwise it stays view-only.</li>
           <li data-i18n="c.n2">In sessions run from ccmon there is no approval dialog: tools that need approval are denied unless you pick a more permissive mode.</li>
           <li data-i18n="c.n3">Disabled skills and agents are blocked when called, but the model still sees them listed.</li>
         </ul>
@@ -240,7 +240,7 @@ cargo run --release -p cc-monitor   # terminal UI</code></pre>
       'c.c1': 'Model, effort, chế độ quyền và agent chính dưới dạng chip',
       'c.c2': 'Tắt skill, plugin, MCP server, agent, workflow cho riêng một session — settings.json của bạn không bị sửa',
       'c.c3': 'Nhắc <code>@agent</code> được tô sáng và liệt kê dưới prompt',
-      'c.n1': 'Session đang mở ở terminal chỉ xem; ccmon không bao giờ tiếp quản.',
+      'c.n1': 'ccmon không bao giờ tiếp quản session đang mở ở terminal. Nếu nó chạy trong tmux, bạn gửi prompt từ ccmon như gõ ở đó; nếu không, chỉ xem.',
       'c.n2': 'Session chạy từ ccmon không có hộp thoại duyệt: tool cần duyệt sẽ bị từ chối, trừ khi bạn chọn chế độ quyền thoáng hơn.',
       'c.n3': 'Skill và agent bị tắt sẽ bị chặn khi gọi, nhưng model vẫn thấy chúng trong danh sách.',
       'c.lib': '<b>Thư viện</b> — cái gì đã cài, session được cung cấp gì và thực sự đã dùng gì.',

@@ -90,11 +90,17 @@ and tail reads, filtered by `since_days`; it is returned regardless of registry 
   through `control::tmux`; otherwise it is view only.
 - `tmux.rs` (`control::tmux`): the terminal channel. `check` finds the tmux pane of the live pid and
   refuses (with a user-facing reason) when there is no pane or the process is suspended (Ctrl+Z). Prompts
-  are pasted into the pane, `/model` and `/effort` are sent for chips, and interrupt sends Esc.
+  are pasted into the pane, `/model` and `/effort` are sent for chips, and interrupt sends Esc. Before a
+  paste, `ensure_no_dialog` captures the pane and refuses while a permission/selection dialog is open
+  (pure `dialog_pending`), since the Enter would answer it. Permission mode, main agent and capabilities
+  are launch settings: fixed for terminal sessions (`set_overlay` refuses while the session is live elsewhere).
 - `subagent.rs` (`control::subagent`): subagent control. Pause, resume, swap and cancel are turned into
   steps (stop the task, send a follow-up to main). Resume relaunches the same agent against the stopped
   transcript, since Claude Code cannot resume a stopped subagent. Paused state is a marker
-  `paused/<sid>.json` in the ccmon state dir (`state::{load,save}_paused`).
+  `paused/<sid>.json` in the ccmon state dir (`state::{load,save}_paused`); `stopped` records that ccmon
+  stopped the task itself (`stop_task`). On a terminal session Dừng/Hủy only ask Claude to stop the
+  subagent (TaskStop) and ccmon cannot confirm it; a foreground subagent is interrupted with Esc first.
+  Resume and swap are refused while the agent still runs (UI: "đang chờ dừng").
 - **Lock-free start of a new session:** `Manager::start_new(&self, ...)` spawns and sends the first
   message; then, with the Manager lock released, `ManagedSession::wait_session_id(timeout)`; then
   `Manager::adopt(sid, session, overlay)`. Avoid `Manager::send(None, ...)` under a shared lock
@@ -130,8 +136,12 @@ what a `Yield {}` is waiting on.
   it), or live in a terminal (`tmux::check` right before each send/Escape; a failed check is the `reason`).
 - `cmd_subagent.rs`: `get_subagent(key)`, `subagent_action(key, action, agent)` (pause/resume/swap/cancel).
   Pure `plan_action` returns the steps; markers in `state::{load,save}_paused`. Swap targets come from the
-  session's agent listing (`cmd_agents::session_agents`); a user/project agent file newer than ccmon's
-  idle `-p` child stops it so the next send relaunches with `--resume`.
+  session's agent listing (`cmd_agents::session_agents`, matched by id: plugin agents are `plugin:name`);
+  a user/project agent file newer than ccmon's idle `-p` child stops it so the next send relaunches with
+  `--resume`, which also stops the session's other background tasks. `subagent_swap_check(key, agent)` is
+  the dry run behind the picker's restart warning. One action per session at a time (`InFlight`).
+  `get_subagent` reads the status with `Store::agent_status_of` (no tree build) and skips the tmux check
+  for finished, unpaused agents; thread links carry `paused` so cards mount controls only when needed.
 - `cmd_agents.rs`: `list_agents/workflows`, `*_history`, `set_agent_disabled`, `set_workflow_disabled`, `save_agent`.
 - Every command is registered in `main.rs` (`generate_handler!`); mirror DTOs in `gui/ui/src/api.ts`.
 

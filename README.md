@@ -119,9 +119,16 @@ conversation is still read from the transcript, so everything else works as befo
   `--disallowedTools` / `--settings` launch flags. Your `settings.json` is never changed; ccmon's own
   state lives in `~/.config/ccmon/` on Linux, `%APPDATA%\ccmon\` on Windows (`overlays/<session>.json`, `defaults.json`, `registry.json`).
 - **Terminal sessions in tmux:** a session open in a terminal is never taken over, but if it runs in tmux
-  you can type into it from ccmon (prompts, `/model`, `/effort`, Stop as Esc). Outside tmux, or suspended
+  you can type into it from ccmon (prompts, `/model`, `/effort`, Stop as Esc). Permission mode, main
+  agent and ⚙ capabilities are launch settings, fixed for a session started in a terminal. ccmon refuses
+  to send while the pane shows a permission or selection dialog (the Enter would answer it); text you
+  are typing in that pane at the same moment gets mixed with ccmon's. Outside tmux, or suspended
   with Ctrl+Z, the composer is locked with the reason.
-- **Subagent controls:** pause, continue, swap or cancel a subagent from its header or card.
+- **Subagent controls:** pause, continue, swap or cancel a subagent from its header or card. In a
+  terminal session, pause and cancel ask Claude to stop the subagent (a foreground one is interrupted
+  with Esc), so ccmon cannot confirm the stop; the card reads "đang chờ dừng" until it has stopped.
+  Swapping to a newly created or edited agent in a session run from ccmon restarts that session, which
+  stops its other background tasks; the picker warns first.
 - **`@agent` mentions:** type `@` in the composer to pick an agent; mentions are highlighted and listed under the prompt.
 
 ### Control center: Library and Agents
