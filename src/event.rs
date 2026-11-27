@@ -361,6 +361,21 @@ fn attachment_event(line: &str, head: &Head) -> Option<Event> {
                 return Some(ev);
             }
         }
+    } else if line.contains("queued_command") {
+        // A prompt the user typed while a turn was running: Claude Code absorbs
+        // it mid-turn and records it only as this attachment, never as a user line.
+        if let Some(prompt) = serde_json::from_str::<Raw>(line)
+            .ok()
+            .and_then(|raw| Some((queued_human_prompt(raw.attachment.as_ref()?)?, raw)))
+            .map(|(p, raw)| {
+                ev.ts = raw.timestamp.as_deref().and_then(parse_ts);
+                p
+            })
+        {
+            ev.kind = Kind::User;
+            ev.prompt = Some(prompt);
+            return Some(ev);
+        }
     }
     let head_bytes = &line.as_bytes()[..line.len().min(4096)];
     if [
@@ -400,6 +415,32 @@ fn attachment_event(line: &str, head: &Head) -> Option<Event> {
         ev.ts = raw.timestamp.as_deref().and_then(parse_ts);
     }
     Some(ev)
+}
+
+/// The text of a `queued_command` attachment the human typed (not a peer
+/// hand-back or a task notification). `prompt` is a string, or content blocks
+/// when images were pasted with it.
+fn queued_human_prompt(a: &Value) -> Option<String> {
+    if a.get("type").and_then(Value::as_str) != Some("queued_command")
+        || a.get("commandMode").and_then(Value::as_str) != Some("prompt")
+    {
+        return None;
+    }
+    match a.pointer("/origin/kind").and_then(Value::as_str) {
+        None | Some("human") => {}
+        Some(_) => return None,
+    }
+    let text = match a.get("prompt")? {
+        Value::String(s) => s.clone(),
+        Value::Array(items) => items
+            .iter()
+            .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+            .filter_map(|b| b.get("text").and_then(Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => return None,
+    };
+    (!text.trim().is_empty() && !text.trim_start().starts_with('<')).then_some(text)
 }
 
 fn link_event(head: &Head) -> Option<Event> {
@@ -775,8 +816,21 @@ mod tests {
     }
 
     #[test]
-    fn queued_command_without_notification_stays_link() {
+    fn queued_human_prompt_is_a_user_prompt() {
+        let e = parse_line(r#"{"type":"attachment","uuid":"u","parentUuid":"p","timestamp":"2026-11-27T03:34:24.495Z","attachment":{"type":"queued_command","prompt":"2. search","commandMode":"prompt","origin":{"kind":"human"},"humanTurn":true}}"#).unwrap();
+        assert_eq!(e.kind, Kind::User);
+        assert_eq!(e.prompt.as_deref(), Some("2. search"));
+        assert_eq!(e.parent.as_deref(), Some("p"));
+        assert!(e.ts.is_some());
+        let e = parse_line(r#"{"type":"attachment","uuid":"u","attachment":{"type":"queued_command","commandMode":"prompt","prompt":[{"type":"text","text":"look"},{"type":"image","source":{}}]}}"#).unwrap();
+        assert_eq!(e.prompt.as_deref(), Some("look"));
+    }
+
+    #[test]
+    fn queued_peer_or_bare_command_stays_link() {
         let e = parse_line(r#"{"type":"attachment","uuid":"u","attachment":{"type":"queued_command","prompt":"hello"}}"#).unwrap();
+        assert_eq!(e.kind, Kind::Link);
+        let e = parse_line(r#"{"type":"attachment","uuid":"u","attachment":{"type":"queued_command","commandMode":"prompt","origin":{"kind":"peer"},"prompt":"<agent-message from=\"a\">x"}}"#).unwrap();
         assert_eq!(e.kind, Kind::Link);
     }
 
