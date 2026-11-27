@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AgentDef, AgentItem, api, CapScope, EXISTS_PREFIX, fmtDur, RunRecord } from './api';
+import { AgentDef, AgentItem, api, CapScope, EXISTS_PREFIX, fmtDur, RunRecord, Usage } from './api';
 import { Markdown } from './Markdown';
 
 type Tab = 'agent' | 'workflow';
@@ -54,19 +54,19 @@ function scopeText(s: CapScope): string {
     return { user: 'Người dùng', project: 'Dự án', builtIn: 'Có sẵn', managed: 'Chỉ còn lịch sử' }[s];
 }
 
-function History({ item, kind, onOpenRun }: { item: AgentItem; kind: Tab; onOpenRun: (key: string, sid: string) => void }) {
+function History({ item, kind, sid, onOpenRun }: { item: AgentItem; kind: Tab; sid: string | null; onOpenRun: (key: string, sid: string) => void }) {
     const [days, setDays] = useState(30);
     const [runs, setRuns] = useState<RunRecord[] | null>(null);
     useEffect(() => {
         let ignore = false;
         setRuns(null);
         (kind === 'agent' ? api.agentHistory(item.id, days) : api.workflowHistory(item.id, days))
-            .then((r) => !ignore && setRuns(r))
+            .then((r) => !ignore && setRuns(sid ? r.filter((x) => x.sessionId === sid) : r))
             .catch(() => !ignore && setRuns([]));
         return () => {
             ignore = true;
         };
-    }, [item.id, kind, days]);
+    }, [item.id, kind, days, sid]);
     return (
         <section className="ag-sec">
             <div className="ag-sec-head">
@@ -116,10 +116,12 @@ function Detail({
     kind,
     onToggle,
     onEdit,
+    sid,
     onOpenRun
 }: {
     item: AgentItem;
     kind: Tab;
+    sid: string | null;
     onToggle: () => void;
     onEdit: () => void;
     onOpenRun: (key: string, sid: string) => void;
@@ -197,7 +199,7 @@ function Detail({
                     </div>
                 </section>
             )}
-            <History item={item} kind={kind} onOpenRun={onOpenRun} />
+            <History item={item} kind={kind} sid={sid} onOpenRun={onOpenRun} />
         </div>
     );
 }
@@ -349,6 +351,25 @@ export function Agents({ sid, onOpenRun }: { sid: string | null; onOpenRun: (key
     const [err, setErr] = useState<string | null>(null);
     const [form, setForm] = useState<{ def: AgentDef; scope: 'user' | 'project' } | 'new' | null>(null);
     const [tick, setTick] = useState(0);
+    const [scope, setScope] = useState<'session' | 'project'>(sid ? 'session' : 'project');
+    const [usage, setUsage] = useState<Usage[]>([]);
+    useEffect(() => {
+        setScope(sid ? 'session' : 'project');
+    }, [sid]);
+    useEffect(() => {
+        if (!sid) {
+            setUsage([]);
+            return;
+        }
+        let ignore = false;
+        api.sessionUsage(sid)
+            .then((u) => !ignore && setUsage(u))
+            .catch(() => !ignore && setUsage([]));
+        return () => {
+            ignore = true;
+        };
+    }, [sid, tick]);
+    const sessionOnly = !!sid && scope === 'session';
 
     useEffect(() => {
         api.projects().then(setProjects).catch(() => setProjects([]));
@@ -382,11 +403,23 @@ export function Agents({ sid, onOpenRun }: { sid: string | null; onOpenRun: (key
         };
     }, [project, tick]);
 
-    const items = tab === 'agent' ? agents : workflows;
+    // id -> usage, only entries actually used in this session
+    const usedMap = useMemo(() => {
+        const m = new Map<string, Usage>();
+        for (const u of usage) if (u.state === 'used' && u.kind === tab) m.set(u.id, u);
+        return m;
+    }, [usage, tab]);
+    const scoped = (l: AgentItem[] | null, k: Tab) =>
+        sessionOnly && l ? l.filter((c) => usage.some((u) => u.state === 'used' && u.kind === k && u.id === c.id)) : l;
+    const agentsView = useMemo(() => scoped(agents, 'agent'), [agents, usage, sessionOnly]);
+    const workflowsView = useMemo(() => scoped(workflows, 'workflow'), [workflows, usage, sessionOnly]);
+    const items = tab === 'agent' ? agentsView : workflowsView;
     const shown = useMemo(() => {
         const q = filter.trim().toLowerCase();
-        return (items ?? []).filter((c) => !q || c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q));
-    }, [items, filter]);
+        const l = (items ?? []).filter((c) => !q || c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q));
+        if (sessionOnly) l.sort((a, b) => (usedMap.get(b.id)?.last ?? 0) - (usedMap.get(a.id)?.last ?? 0));
+        return l;
+    }, [items, filter, sessionOnly, usedMap]);
     const current = shown.find((c) => c.id === sel[tab]) ?? shown[0] ?? null;
 
     const toggle = (c: AgentItem) => {
@@ -420,12 +453,22 @@ export function Agents({ sid, onOpenRun }: { sid: string | null; onOpenRun: (key
             <div className="lib-bar ag-bar">
                 <div className="lib-tabs">
                     <button type="button" className={`sb-toggle ${tab === 'agent' ? 'on' : ''}`} onClick={() => setTab('agent')}>
-                        Agents · {agents?.length ?? '…'}
+                        Agents · {agentsView?.length ?? '…'}
                     </button>
                     <button type="button" className={`sb-toggle ${tab === 'workflow' ? 'on' : ''}`} onClick={() => setTab('workflow')}>
-                        Workflows · {workflows?.length ?? '…'}
+                        Workflows · {workflowsView?.length ?? '…'}
                     </button>
                 </div>
+                {sid && (
+                    <div className="lib-tabs">
+                        <button type="button" className={`sb-toggle ${scope === 'session' ? 'on' : ''}`} onClick={() => setScope('session')}>
+                            Session này
+                        </button>
+                        <button type="button" className={`sb-toggle ${scope === 'project' ? 'on' : ''}`} onClick={() => setScope('project')}>
+                            Dự án
+                        </button>
+                    </div>
+                )}
                 <select
                     className="cmp-chip ag-project"
                     value={project ?? PROJECT_NONE}
@@ -453,7 +496,15 @@ export function Agents({ sid, onOpenRun }: { sid: string | null; onOpenRun: (key
             <div className="ag-split">
                 <div className="ag-list">
                     {items === null && <div className="muted pad small">Đang tải…</div>}
-                    {items !== null && shown.length === 0 && <div className="muted pad small">Không có mục nào.</div>}
+                    {items !== null && shown.length === 0 && (
+                        <div className="muted pad small">
+                            {sessionOnly && !filter.trim()
+                                ? tab === 'agent'
+                                    ? 'Session này chưa dùng agent nào.'
+                                    : 'Session này chưa dùng workflow nào.'
+                                : 'Không có mục nào.'}
+                        </div>
+                    )}
                     {GROUPS.map(([g, label]) => {
                         const list = shown.filter((c) => groupOf(c.scope) === g);
                         if (!list.length) return null;
@@ -472,7 +523,9 @@ export function Agents({ sid, onOpenRun }: { sid: string | null; onOpenRun: (key
                                     >
                                         <span className="ag-item-name">{c.name}</span>
                                         {c.disabled && <span className="chip ag-off">Đã tắt</span>}
-                                        {c.runs > 0 && <span className="muted small ag-runs-n">×{c.runs}</span>}
+                                        {sessionOnly
+                                            ? usedMap.has(c.id) && <span className="muted small ag-runs-n">×{usedMap.get(c.id)!.count}</span>
+                                            : c.runs > 0 && <span className="muted small ag-runs-n">×{c.runs}</span>}
                                         <span className="ag-item-desc">{c.description.split('\n')[0] || (typeof c.scope !== 'string' ? c.scope.plugin : '')}</span>
                                     </button>
                                 ))}
@@ -481,7 +534,7 @@ export function Agents({ sid, onOpenRun }: { sid: string | null; onOpenRun: (key
                     })}
                 </div>
                 {current ? (
-                    <Detail key={`${tab}:${current.id}`} item={current} kind={tab} onToggle={() => toggle(current)} onEdit={() => edit(current)} onOpenRun={onOpenRun} />
+                    <Detail key={`${tab}:${current.id}`} item={current} kind={tab} sid={sessionOnly ? sid : null} onToggle={() => toggle(current)} onEdit={() => edit(current)} onOpenRun={onOpenRun} />
                 ) : (
                     <div className="ag-detail muted pad">Chọn một mục để xem chi tiết.</div>
                 )}
