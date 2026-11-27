@@ -140,12 +140,20 @@ export function Sidebar({
     onFocus: (hit: FileHit) => void;
 }) {
     // Per-file cursor into `hits`, counted from the newest.
-    const [cursor, setCursor] = useState<Record<string, number>>({});
+    // Keyed by the last focused toolId so live-growing `hits` cannot shift it.
+    const [cursor, setCursor] = useState<Record<string, string>>({});
+    const posOf = (path: string, hits: FileHit[]) => {
+        const id = cursor[path];
+        const p = id == null ? -1 : hits.findIndex((h) => h.toolId === id);
+        return p < 0 ? -1 : hits.length - 1 - p; // 0 = newest
+    };
     const focusNext = (path: string, hits: FileHit[]) => {
         if (hits.length === 0) return;
-        const i = ((cursor[path] ?? -1) + 1) % hits.length;
-        setCursor((c) => ({ ...c, [path]: i }));
-        onFocus(hits[hits.length - 1 - i]);
+        const cur = posOf(path, hits);
+        const i = cur < 0 || cur + 1 >= hits.length ? 0 : cur + 1;
+        const hit = hits[hits.length - 1 - i];
+        setCursor((c) => ({ ...c, [path]: hit.toolId }));
+        onFocus(hit);
     };
     const [tab, setTab] = useState<Tab>('user');
     const scope = 'thread' as const;
@@ -241,9 +249,9 @@ export function Sidebar({
                                 </button>
                                 {f.hits.length > 0 && (
                                     <>
-                                        {cursor[f.path] != null && (
+                                        {posOf(f.path, f.hits) >= 0 && (
                                             <span className="frow-pos">
-                                                {Math.min(cursor[f.path] + 1, f.hits.length)}/{f.hits.length}
+                                                {posOf(f.path, f.hits) + 1}/{f.hits.length}
                                             </span>
                                         )}
                                         <button

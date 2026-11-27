@@ -781,6 +781,10 @@ export default function App() {
     // Jump to a tool card (file hit): load enough history to include it, then scroll + flash.
     const pendingFocus = useRef<FileHit | null>(null);
     const [focusTick, setFocusTick] = useState(0);
+    const flashTimer = useRef<ReturnType<typeof setTimeout>>();
+    useEffect(() => {
+        if (pendingFocus.current && pendingFocus.current.threadKey !== selected) pendingFocus.current = null;
+    }, [selected]);
     const focusTool = (hit: FileHit) => {
         pendingFocus.current = hit;
         if (hit.threadKey !== selected) select(hit.threadKey);
@@ -800,8 +804,11 @@ export default function App() {
         const el = content.current?.querySelector<HTMLElement>(`[data-tool-id="${CSS.escape(hit.toolId)}"]`);
         if (!el) return;
         el.scrollIntoView({ block: 'center' });
+        clearTimeout(flashTimer.current);
+        document.querySelectorAll('.flash').forEach((n) => n.classList.remove('flash'));
+        void el.offsetWidth; // force reflow so the animation restarts
         el.classList.add('flash');
-        setTimeout(() => el.classList.remove('flash'), 1500);
+        flashTimer.current = setTimeout(() => el.classList.remove('flash'), 1500);
     }, [view, focusTick, selected, tail]);
 
     const back = () => {
