@@ -185,6 +185,14 @@ export function SubagentControl({
             un.then((f) => f());
         };
     }, [agentKey]);
+    // Waiting for a pause to take effect: the agent turning quiet emits no
+    // store event, so look again every few seconds until it has stopped.
+    const stopping = dto?.stopping === true;
+    useEffect(() => {
+        if (!stopping) return;
+        const t = window.setInterval(load, 5000);
+        return () => window.clearInterval(t);
+    }, [stopping, load]);
     // The card's tree status changed (e.g. running -> done): refetch.
     const lastStatus = useRef(status);
     useEffect(() => {

@@ -8,6 +8,7 @@
 //! session (`Manager::send` resumes it) or a tmux pane (main is asked to call
 //! TaskStop itself; a foreground agent is interrupted with Esc first).
 
+use cc_monitor::bgtask::BgState;
 use cc_monitor::catalog::{CapKind, Capability, Scope};
 use cc_monitor::control::runner::RunState;
 use cc_monitor::control::state::{self, effective, Paused};
@@ -212,6 +213,23 @@ pub fn effective_status<'a>(status: &'a str, marker: Option<&Paused>) -> &'a str
     }
 }
 
+/// `effective_status`, plus main's view of the task: once a paused agent's stop
+/// notice (task killed/completed/failed) reached main, it has stopped even if
+/// the tree row still reads running. Without this a terminal pause waited for
+/// the transcript to go quiet, which emits no event, so the UI sat on
+/// "đang chờ dừng".
+pub fn status_for<'a>(status: &'a str, marker: Option<&Paused>, bg: Option<BgState>) -> &'a str {
+    let ended = matches!(
+        bg,
+        Some(BgState::Killed | BgState::Completed | BgState::Failed)
+    );
+    if marker.is_some() && ended {
+        "done"
+    } else {
+        effective_status(status, marker)
+    }
+}
+
 /// Run `steps` in order through `exec`, stopping at the first failure, except
 /// for markers: once `StopTask`/`Escape` succeeded the agent is stopped, so a later
 /// failure (telling main) still saves a pause marker — resume, swap or cancel
@@ -256,6 +274,8 @@ struct Info {
     call: SubagentCall,
     status: String,
     transcript: PathBuf,
+    /// Main's background-task state for the launching Agent call.
+    bg: Option<BgState>,
 }
 
 fn info(ctx: &Ctx, key: &str) -> Option<Info> {
@@ -269,12 +289,14 @@ fn info(ctx: &Ctx, key: &str) -> Option<Info> {
     let s = st.sessions.get(sid)?;
     let call = find_call(&s.main, aid)?;
     let transcript = s.agents.get(aid)?.path.clone();
+    let bg = s.main.bg_state_for_tool(&call.tool_use_id);
     let status = crate::status_str(st.agent_status_of(sid, aid, discovery::now_ms())?);
     Some(Info {
         sid: sid.clone(),
         call,
         status: status.to_string(),
         transcript,
+        bg,
     })
 }
 
@@ -305,7 +327,7 @@ fn mtime(p: &Path) -> Option<SystemTime> {
 fn subagent_dto(ctx: &Ctx, key: &str) -> Option<SubagentDto> {
     let i = info(ctx, key)?;
     let m = marker(&i.sid, &i.call.agent_id);
-    let active = matches!(effective_status(&i.status, m.as_ref()), "running" | "idle");
+    let active = matches!(status_for(&i.status, m.as_ref(), i.bg), "running" | "idle");
     // No controls for a finished, unpaused agent: skip the channel check
     // (tmux forks) entirely.
     let (channel, reason) = if active || m.is_some() {
@@ -354,7 +376,7 @@ fn act(ctx: &Ctx, key: &str, action: &str, agent: Option<&str>) -> Result<(), St
     let _guard = InFlight::take(sid)?;
     let m = marker(sid, &i.call.agent_id);
     let paused = m.is_some();
-    let status = effective_status(&i.status, m.as_ref());
+    let status = status_for(&i.status, m.as_ref(), i.bg);
     // Validate the swap target (catalog scan) before routing, so the tmux
     // check stays right before the send.
     let file = if action == "swap" {
@@ -661,6 +683,23 @@ mod tests {
         // A managed pause can be resumed at once; a terminal one waits.
         let st = effective_status("running", Some(&m(true)));
         assert!(plan("resume", st, true, Channel::Managed).is_ok());
+    }
+
+    #[test]
+    fn terminal_pause_counts_as_stopped_once_main_got_the_stop_notice() {
+        let m = Paused {
+            call: call(),
+            at: 1,
+            stopped: false,
+        };
+        // Row still says running (transcript not quiet for 30 s yet), but main's
+        // task notice says the agent was killed: resume/swap are allowed.
+        assert_eq!(status_for("running", Some(&m), Some(BgState::Killed)), "done");
+        assert_eq!(status_for("running", Some(&m), Some(BgState::Running)), "running");
+        // Without a marker the notice changes nothing (not ccmon's pause).
+        assert_eq!(status_for("running", None, Some(BgState::Killed)), "running");
+        let st = status_for("running", Some(&m), Some(BgState::Killed));
+        assert!(plan("resume", st, true, Channel::Terminal).is_ok());
     }
 
     #[test]
