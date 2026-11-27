@@ -685,7 +685,11 @@ mod tests {
             .collect();
         assert_eq!(
             got,
-            vec![("m:s", "r1", "read"), ("a:s:x", "r2", "read"), ("m:s", "e1", "edit")]
+            vec![
+                ("m:s", "r1", "read"),
+                ("a:s:x", "r2", "read"),
+                ("m:s", "e1", "edit")
+            ]
         );
         assert!(f.hits.windows(2).all(|w| w[0].ts <= w[1].ts));
         let idx_of = |t: &mut Thread, id: &str| {
