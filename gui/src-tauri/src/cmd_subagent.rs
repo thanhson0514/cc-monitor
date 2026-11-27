@@ -305,10 +305,7 @@ fn mtime(p: &Path) -> Option<SystemTime> {
 fn subagent_dto(ctx: &Ctx, key: &str) -> Option<SubagentDto> {
     let i = info(ctx, key)?;
     let m = marker(&i.sid, &i.call.agent_id);
-    let active = matches!(
-        effective_status(&i.status, m.as_ref()),
-        "running" | "idle"
-    );
+    let active = matches!(effective_status(&i.status, m.as_ref()), "running" | "idle");
     // No controls for a finished, unpaused agent: skip the channel check
     // (tmux forks) entirely.
     let (channel, reason) = if active || m.is_some() {
@@ -584,7 +581,16 @@ mod tests {
     #[test]
     fn foreground_agent_on_tmux_is_interrupted_with_escape() {
         let p = |action: &str| {
-            plan_action(action, "running", false, Channel::Terminal, &fg(), "/t", None).unwrap()
+            plan_action(
+                action,
+                "running",
+                false,
+                Channel::Terminal,
+                &fg(),
+                "/t",
+                None,
+            )
+            .unwrap()
         };
         // Esc interrupts main's turn and with it the agent: main is told it is stopped.
         assert_eq!(
@@ -597,11 +603,23 @@ mod tests {
         );
         assert_eq!(
             p("cancel"),
-            vec![Step::Escape, Step::Send(cancel_msg(&fg(), Channel::Managed))]
+            vec![
+                Step::Escape,
+                Step::Send(cancel_msg(&fg(), Channel::Managed))
+            ]
         );
         // Managed: stop_task works on a foreground agent too (control.md).
         assert_eq!(
-            plan_action("pause", "running", false, Channel::Managed, &fg(), "/t", None).unwrap()[0],
+            plan_action(
+                "pause",
+                "running",
+                false,
+                Channel::Managed,
+                &fg(),
+                "/t",
+                None
+            )
+            .unwrap()[0],
             Step::StopTask
         );
         // Background agent on tmux: no Escape.
@@ -697,7 +715,16 @@ mod tests {
         let (_, done) = run_with(t, send);
         assert!(!done.contains(&Step::MarkPaused));
         // Tmux foreground: Esc went through, message failed -> marker kept.
-        let f = plan_action("pause", "running", false, Channel::Terminal, &fg(), "/t", None).unwrap();
+        let f = plan_action(
+            "pause",
+            "running",
+            false,
+            Channel::Terminal,
+            &fg(),
+            "/t",
+            None,
+        )
+        .unwrap();
         let (_, done) = run_with(f, send);
         assert_eq!(done.last(), Some(&Step::MarkPaused));
         // Paused cancel: send fails -> keep the existing marker (no Unmark).

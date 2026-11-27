@@ -288,10 +288,14 @@ mod tests {
     fn dialog_pending_detects_permission_prompts() {
         let bash = "● Bash(rm -rf build)\n\n Bash command\n   rm -rf build\n Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently (esc)\n\n\n";
         assert!(dialog_pending(bash));
-        assert!(dialog_pending("Do you want to make this edit to main.rs?\n❯ 1. Yes\n"));
+        assert!(dialog_pending(
+            "Do you want to make this edit to main.rs?\n❯ 1. Yes\n"
+        ));
         assert!(dialog_pending("Which option?\n❯ 1. Red\n  2. Blue\nEnter to select · ↑/↓ to navigate · Esc to cancel\n"));
         // Normal input box: nothing pending.
-        assert!(!dialog_pending("● Done.\n\n╭────╮\n│ ❯ hello │\n╰────╯\n  ? for shortcuts\n"));
+        assert!(!dialog_pending(
+            "● Done.\n\n╭────╮\n│ ❯ hello │\n╰────╯\n  ? for shortcuts\n"
+        ));
         assert!(!dialog_pending(""));
         // An old prompt scrolled above the last 15 lines no longer counts.
         let mut old = String::from("Do you want to proceed?\n❯ 1. Yes\n");
