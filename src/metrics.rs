@@ -125,6 +125,34 @@ pub fn collect(thread: &Thread, tee: Option<&Value>, mem: Option<(u64, u64)>) ->
     m
 }
 
+/// Model and effort of the selected node (main thread, subagent or workflow agent).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct NodeModel {
+    /// Display label, same formatting as the status bar (`Opus 5.5`).
+    pub model: Option<String>,
+    /// Raw model id (`claude-opus-5-5`), if known.
+    pub model_id: Option<String>,
+    pub effort: Option<String>,
+    /// The values come from a subagent thread rather than the main session.
+    pub sub: bool,
+}
+
+/// `main` = the session's metrics, `main_id` = its raw model id; `node` = the
+/// selected subagent thread, if any. A subagent's own model/effort win; what it
+/// has not recorded is inherited from the session.
+pub fn node_model(main: &Metrics, main_id: Option<&str>, node: Option<&Thread>) -> NodeModel {
+    let own_id = node.and_then(Thread::model);
+    NodeModel {
+        model: own_id.map(model_label).or_else(|| main.model.clone()),
+        model_id: own_id.or(main_id).map(str::to_string),
+        effort: node
+            .and_then(Thread::effort)
+            .map(str::to_string)
+            .or_else(|| main.effort.clone()),
+        sub: node.is_some(),
+    }
+}
+
 /// Load a fresh status-line snapshot for this session, if any.
 pub fn load_tee(dir: &Path, sid: &str, now_ms: i64) -> Option<Value> {
     let p = dir.join(format!("{sid}.json"));
@@ -199,6 +227,32 @@ mod tests {
         assert_eq!(m.win, Some((200_000, true)));
         assert_eq!(m.ctx_pct, Some(50.0));
         assert_eq!(m.five_h, None);
+    }
+
+    #[test]
+    fn node_model_prefers_node_then_main() {
+        let main = collect(&thread(), None, None);
+        // Main thread itself: its own label, id and effort.
+        let n = node_model(&main, Some("claude-opus-5-5"), None);
+        assert_eq!(n.model.as_deref(), Some("Opus 5.5"));
+        assert_eq!(n.model_id.as_deref(), Some("claude-opus-5-5"));
+        assert_eq!(n.effort.as_deref(), Some("medium"));
+        assert!(!n.sub);
+        // Subagent with its own model and no effort: model from the subagent,
+        // effort inherited from the session.
+        let mut sub = Thread::new();
+        sub.push(parse_line(r#"{"type":"assistant","uuid":"s","message":{"model":"claude-haiku-4-5-20251001","content":[]}}"#).unwrap());
+        let n = node_model(&main, Some("claude-opus-5-5"), Some(&sub));
+        assert_eq!(n.model.as_deref(), Some("Haiku 4.5"));
+        assert_eq!(n.model_id.as_deref(), Some("claude-haiku-4-5-20251001"));
+        assert_eq!(n.effort.as_deref(), Some("medium"));
+        assert!(n.sub);
+        // Subagent with nothing recorded yet: everything from the session.
+        let empty = Thread::new();
+        let n = node_model(&main, Some("claude-opus-5-5"), Some(&empty));
+        assert_eq!(n.model.as_deref(), Some("Opus 5.5"));
+        assert_eq!(n.model_id.as_deref(), Some("claude-opus-5-5"));
+        assert!(n.sub);
     }
 
     #[test]

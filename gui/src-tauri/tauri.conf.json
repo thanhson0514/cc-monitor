@@ -3,7 +3,7 @@
   "productName": "ccmon",
   "mainBinaryName": "ccmon-gui",
   "version": "0.2.0",
-  "identifier": "io.github.thanhson0514.ccmon",
+  "identifier": "io.github.wik1ngst-1103.ccmon",
   "build": {
     "frontendDist": "../ui/dist",
     "beforeBuildCommand": {
@@ -36,10 +36,10 @@
     "publisher": "Le Thanh Son",
     "copyright": "Copyright (c) 2026 Le Thanh Son. MIT License.",
     "license": "MIT",
-    "homepage": "https://thanhson0514.github.io/cc-monitor",
+    "homepage": "https://cc-monitor.online",
     "category": "DeveloperTool",
     "shortDescription": "Watch Claude Code sessions, sub-agents and workflows live",
-    "longDescription": "ccmon is a read-only desktop monitor for AI coding agents. It reads the session transcripts Claude Code already writes on your machine and shows every step: prompts, tool calls, sub-agents, workflows, files changed (with side-by-side diffs), images and plan usage.",
+    "longDescription": "ccmon is a local desktop control center for Claude Code. It shows every step of your sessions live (prompts, tool calls, background tasks, sub-agents, workflows, side-by-side diffs, plan usage), and lets you manage skills, plugins, MCP servers, agents and workflows, and run sessions with your choice of model and effort.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -4,10 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ccmon — See what your AI coding agent is doing</title>
-  <meta name="description" content="ccmon is a free, open-source desktop app that shows Claude Code sessions live: every prompt, tool call, sub-agent, workflow, file change and plan limit. Local and read-only." />
+  <meta name="description" content="ccmon is a free, open-source desktop app that shows Claude Code sessions live — every prompt, tool call, sub-agent, workflow, background task and file change — and lets you run sessions and manage skills, plugins, MCP servers, agents and workflows. Local, no telemetry." />
+  <link rel="canonical" href="https://cc-monitor.online/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://cc-monitor.online/" />
   <meta property="og:title" content="ccmon — See what your AI coding agent is doing" />
-  <meta property="og:description" content="Live monitor for Claude Code: timeline, sub-agents, workflows, side-by-side diffs, plan usage. Local, read-only, MIT." />
-  <meta property="og:image" content="assets/screen-main.png" />
+  <meta property="og:description" content="Live monitor and control center for Claude Code: timeline, sub-agents, background tasks, diffs, plan usage, plus skills, plugins, MCP servers, agents and workflows per session. Local, MIT." />
+  <meta property="og:image" content="https://cc-monitor.online/assets/screen-main.png" />
+  <meta name="twitter:card" content="summary_large_image" />
   <link rel="icon" href="assets/favicon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -79,6 +83,14 @@
     .checks li { padding-left: 28px; position: relative; margin: 10px 0; color: #c9ccd6; }
     .checks li::before { content: "✓"; position: absolute; left: 0; color: var(--green); font-weight: 700; }
 
+    .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 40px; }
+    .duo figure { margin: 0; }
+    .duo .shot { margin: 0; box-shadow: 0 30px 80px -30px rgba(0,0,0,.7); }
+    .duo figcaption { margin-top: 12px; color: var(--muted); font-size: 14.5px; }
+    .duo figcaption b { color: var(--text); font-weight: 600; }
+    .notes { list-style: none; padding: 0; margin: 18px 0 0; font-size: 14px; color: var(--muted); }
+    .notes li { padding-left: 22px; position: relative; margin: 8px 0; }
+    .notes li::before { content: "!"; position: absolute; left: 0; top: 1px; width: 15px; height: 15px; border-radius: 50%; background: #3a2a1f; color: var(--claude); font-size: 11px; font-weight: 700; display: grid; place-items: center; }
     .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 36px; counter-reset: s; }
     .step { border-left: 2px solid #2b2f48; padding: 4px 0 4px 18px; }
     .step::before { counter-increment: s; content: counter(s); display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #232744; color: var(--accent); font-weight: 700; font-size: 13px; margin-bottom: 8px; }
@@ -107,7 +119,7 @@
 
     @media (max-width: 900px) {
       .grid, .steps { grid-template-columns: 1fr 1fr; }
-      .split, .split.rev { grid-template-columns: 1fr; }
+      .split, .split.rev, .duo { grid-template-columns: 1fr; }
       .split.rev .shot { order: 2; }
       nav .links a.hide-sm { display: none; }
     }
@@ -124,9 +136,10 @@
       <a class="logo" href="#"><img src="assets/logo.png" alt="" /> ccmon</a>
       <div class="links">
         <a class="hide-sm" href="#features" data-i18n="nav.features">Features</a>
+        <a class="hide-sm" href="#control" data-i18n="nav.control">Control center</a>
         <a class="hide-sm" href="#install" data-i18n="nav.install">Install</a>
         <a class="hide-sm" href="#faq">FAQ</a>
-        <a href="https://github.com/thanhson0514/cc-monitor">GitHub</a>
+        <a href="https://github.com/wik1ngst-1103/cc-monitor">GitHub</a>
         <div class="lang"><button data-lang="en" class="on">EN</button><button data-lang="vi">VI</button></div>
       </div>
     </div>
@@ -136,24 +149,24 @@
     <div class="wrap">
       <span class="badge"><b>●</b> <span data-i18n="hero.badge">Free &amp; open source · MIT · Windows &amp; Linux</span></span>
       <h1><span data-i18n="hero.t1">See what your</span> <span class="grad" data-i18n="hero.t2">AI coding agent</span> <span data-i18n="hero.t3">is doing — live.</span></h1>
-      <p class="sub" data-i18n="hero.sub">ccmon turns Claude Code sessions into a clean, real-time view: every prompt, command, file edit, sub-agent and workflow, with side-by-side diffs and plan usage. It only reads what the agents already save on your machine.</p>
+      <p class="sub" data-i18n="hero.sub">ccmon turns Claude Code sessions into a clean, real-time view: every prompt, command, file edit, sub-agent, workflow and background task, with side-by-side diffs and plan usage. Run sessions from it and manage skills, plugins, MCP servers, agents and workflows per session.</p>
       <div class="cta">
-        <a class="btn btn-primary dl" id="dl-win" href="https://github.com/thanhson0514/cc-monitor/releases/latest">
+        <a class="btn btn-primary dl" id="dl-win" href="https://github.com/wik1ngst-1103/cc-monitor/releases/latest">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>
           <span class="dl-label">Windows</span> <small>.exe</small>
         </a>
-        <a class="btn btn-primary dl" id="dl-linux" href="https://github.com/thanhson0514/cc-monitor/releases/latest">
+        <a class="btn btn-primary dl" id="dl-linux" href="https://github.com/wik1ngst-1103/cc-monitor/releases/latest">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 21h16"/></svg>
           <span class="dl-label">Linux</span> <small>.deb</small>
         </a>
-        <a class="btn" href="https://github.com/thanhson0514/cc-monitor">
+        <a class="btn" href="https://github.com/wik1ngst-1103/cc-monitor">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12a11.5 11.5 0 007.9 10.9c.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 015.8 0C17.3 4.6 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6A11.5 11.5 0 0023.5 12C23.5 5.7 18.3.5 12 .5z"/></svg>
           <span data-i18n="hero.star">Star on GitHub</span>
         </a>
       </div>
       <div class="tools"><span data-i18n="hero.works">Works with</span> <span class="tag claude">Claude Code</span></div>
       <div class="dl-other" id="dl-other"></div>
-      <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-main.png" alt="ccmon main window: session tree, chat timeline with tool cards, file sidebar and status bar" /></div>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-main.png" alt="ccmon main window: session tree, timeline with a Yield card listing the background tasks it waits on, composer and status bar" /></div>
     </div>
   </header>
 
@@ -168,8 +181,45 @@
         <div class="card"><div class="ic">±</div><h3 data-i18n="f3.t">Side-by-side diffs</h3><p data-i18n="f3.d">Every file the session changed, compared with how it was before the session (or with git HEAD), in two aligned columns.</p></div>
         <div class="card"><div class="ic">🗂</div><h3 data-i18n="f4.t">Files, images &amp; logs</h3><p data-i18n="f4.d">Images you pasted, screenshots the agent took, files it read or wrote, scratchpad output and a ✓/✗ command log — with previews and Markdown rendering.</p></div>
         <div class="card"><div class="ic">📊</div><h3 data-i18n="f5.t">Plan usage at a glance</h3><p data-i18n="f5.d">Model, context used, 5-hour and weekly limits, effort, git branch and lines changed in a compact status bar.</p></div>
-        <div class="card"><div class="ic">🔒</div><h3 data-i18n="f6.t">Local &amp; read-only</h3><p data-i18n="f6.d">No account, no network calls, no telemetry. ccmon reads the transcripts your agents already write and never changes them.</p></div>
+        <div class="card"><div class="ic">⏳</div><h3 data-i18n="f7.t">Background tasks in detail</h3><p data-i18n="f7.d">A Yield card lists what the agent is waiting on — shells, monitors, sub-agents, workflows — with live state and which one woke it. Background Bash and Monitor show status and a live output tail.</p></div>
+        <div class="card"><div class="ic">📚</div><h3 data-i18n="f8.t">Library</h3><p data-i18n="f8.d">Skills, plugins and MCP servers found on disk or announced by the session, with “used ×n” or “available” for the selected session and a per-session switch.</p></div>
+        <div class="card"><div class="ic">🤖</div><h3 data-i18n="f9.t">Agents &amp; workflows</h3><p data-i18n="f9.d">Built-in, plugin, user and project agents and workflows in one list. Create or edit your own agents, disable one in ccmon without losing files or run history, open past runs.</p></div>
+        <div class="card"><div class="ic">💬</div><h3 data-i18n="f10.t">Run sessions from ccmon</h3><p data-i18n="f10.d">Type a prompt to continue a session or start a new one. Pick model, effort, permission mode and main agent; mention agents with <code>@</code>.</p></div>
+        <div class="card"><div class="ic">🧭</div><h3 data-i18n="f11.t">Compact header</h3><p data-i18n="f11.d">One slim bar with a Thread / Library / Agents switch (<code>Ctrl+1/2/3</code>), so the timeline keeps the space.</p></div>
+        <div class="card"><div class="ic">▶️</div><h3 data-i18n="f12.t">What it's doing now</h3><p data-i18n="f12.d">A live line under the timeline: which tool is running, waiting on an agent, thinking, replying or waiting for you — with elapsed time.</p></div>
+        <div class="card"><div class="ic">🔒</div><h3 data-i18n="f6.t">Local, no telemetry</h3><p data-i18n="f6.d">No account, no network calls of its own, no telemetry. Read-only unless you run a session from ccmon or save an agent; transcripts are never changed.</p></div>
       </div>
+    </div>
+  </section>
+
+  <section id="control">
+    <div class="wrap split rev">
+      <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-composer.png" alt="Composer with a highlighted @Explore mention, model, effort, permission and agent chips, and the per-session capability drawer" loading="lazy" /></div>
+      <div>
+        <div class="eyebrow" data-i18n="c.eyebrow">Control center</div>
+        <h2 data-i18n="c.title">Steer the session, not just watch it</h2>
+        <p class="lead" data-i18n="c.lead">The composer under the timeline runs the <code>claude</code> you already have. Every choice applies from the next turn through Claude Code's own CLI flags.</p>
+        <ul class="checks">
+          <li data-i18n="c.c1">Model, effort, permission mode and main agent as chips</li>
+          <li data-i18n="c.c2">Turn skills, plugins, MCP servers, agents and workflows off for one session — your settings.json is never edited</li>
+          <li data-i18n="c.c3"><code>@agent</code> mentions are highlighted and listed under the prompt</li>
+        </ul>
+        <ul class="notes">
+          <li data-i18n="c.n1">Sessions open in a terminal stay view-only; ccmon never takes them over.</li>
+          <li data-i18n="c.n2">In sessions run from ccmon there is no approval dialog: tools that need approval are denied unless you pick a more permissive mode.</li>
+          <li data-i18n="c.n3">Disabled skills and agents are blocked when called, but the model still sees them listed.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="wrap duo">
+      <figure>
+        <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-library.png" alt="Library page: skills with scope, global state, per-session usage and switches" loading="lazy" /></div>
+        <figcaption data-i18n="c.lib"><b>Library</b> — what is installed, what the session was offered and what it actually used.</figcaption>
+      </figure>
+      <figure>
+        <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-agents.png" alt="Agents page: agent list by source, details with tools and model, prompt and run history" loading="lazy" /></div>
+        <figcaption data-i18n="c.ag"><b>Agents</b> — edit your own agents, switch one off in ccmon, reopen any past run.</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -185,13 +235,13 @@
           <li data-i18n="d.c3">Unchanged regions folded, syntax highlighted</li>
         </ul>
       </div>
-      <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-diff.png" alt="Side-by-side diff view" /></div>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-diff.png" alt="Side-by-side diff view" loading="lazy" /></div>
     </div>
   </section>
 
   <section>
     <div class="wrap split rev">
-      <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-setup.png" alt="First-run setup for Claude Code" /></div>
+      <div class="shot"><div class="bar"><i></i><i></i><i></i></div><img src="assets/screen-setup.png" alt="First-run setup for Claude Code" loading="lazy" /></div>
       <div>
         <div class="eyebrow" data-i18n="s.eyebrow">One-click setup</div>
         <h2 data-i18n="s.title">Point it at Claude Code and go</h2>
@@ -212,7 +262,7 @@
       <div class="steps">
         <div class="step"><h3 data-i18n="h1.t">Keep using your agent</h3><p data-i18n="h1.d">Run Claude Code in the terminal or your editor, exactly as today.</p></div>
         <div class="step"><h3 data-i18n="h2.t">ccmon reads the transcript</h3><p data-i18n="h2.d">It tails <code>~/.claude/projects</code> (about 0.4 s latency) and builds the thread tree.</p></div>
-        <div class="step"><h3 data-i18n="h3.t">Watch, review, follow up</h3><p data-i18n="h3.d">See each step as it happens, open sub-agents, review diffs and files, then go back to your agent.</p></div>
+        <div class="step"><h3 data-i18n="h3.t">Watch, review, follow up</h3><p data-i18n="h3.d">See each step as it happens, open sub-agents, review diffs and files, then reply from ccmon or go back to your terminal.</p></div>
       </div>
     </div>
   </section>
@@ -239,7 +289,7 @@
           <pre><code>sudo apt install ./ccmon_*_amd64.deb</code></pre>
         </div>
         <div class="pane" id="tab-src">
-          <pre><code>git clone https://github.com/thanhson0514/cc-monitor && cd cc-monitor
+          <pre><code>git clone https://github.com/wik1ngst-1103/cc-monitor && cd cc-monitor
 ./gui/build.sh                 # desktop app → target/release/ccmon-gui
 cargo run --release -p cc-monitor   # terminal UI</code></pre>
         </div>
@@ -252,8 +302,8 @@ cargo run --release -p cc-monitor   # terminal UI</code></pre>
       <div class="eyebrow">FAQ</div>
       <h2 data-i18n="q.title">Questions</h2>
       <details><summary data-i18n="q1.q">Is ccmon made by Anthropic?</summary><p data-i18n="q1.a">No. ccmon is an independent community project. Claude Code is a product of Anthropic; ccmon is not affiliated with or endorsed by Anthropic.</p></details>
-      <details><summary data-i18n="q2.q">Does it send my code or prompts anywhere?</summary><p data-i18n="q2.a">No. Everything stays on your machine. ccmon makes no network requests and has no telemetry.</p></details>
-      <details><summary data-i18n="q3.q">Can it change my sessions or settings?</summary><p data-i18n="q3.a">It only reads. The single exception is opt-in: wrapping Claude Code's status line to read plan usage, which backs up settings.json and can be undone from Settings.</p></details>
+      <details><summary data-i18n="q2.q">Does it send my code or prompts anywhere?</summary><p data-i18n="q2.a">No. ccmon itself makes no network requests and has no telemetry. Sessions you run from ccmon are ordinary Claude Code sessions, using your own <code>claude</code> install.</p></details>
+      <details><summary data-i18n="q3.q">Can it change my sessions or settings?</summary><p data-i18n="q3.a">Only when you ask it to. Watching is read-only. ccmon writes its own state (per-session switches, disabled agents) in its config folder, agent files you save from the Agents page after confirming, and — opt-in — a status-line wrapper for plan usage that backs up settings.json and can be undone. Per-session switches use launch flags; settings.json, skill, plugin and MCP files are never edited.</p></details>
       <details><summary data-i18n="q4.q">Why can't I see the model's full thinking?</summary><p data-i18n="q4.a">Claude Code stores reasoning encrypted or omits it from transcripts. ccmon shows what is saved: short progress notes and thinking time.</p></details>
       <details><summary data-i18n="q5.q">Can I use it commercially or modify it?</summary><p data-i18n="q5.a">Yes — MIT license. To change the code, please fork the repository and open a pull request, or report problems as issues.</p></details>
     </div>
@@ -261,18 +311,18 @@ cargo run --release -p cc-monitor   # terminal UI</code></pre>
 
   <footer>
     <div class="wrap">
-      <div>© 2026 Lê Thanh Sơn · <a href="https://github.com/thanhson0514/cc-monitor/blob/main/LICENSE">MIT License</a></div>
+      <div>© 2026 Lê Thanh Sơn · <a href="https://github.com/wik1ngst-1103/cc-monitor/blob/main/LICENSE">MIT License</a></div>
       <div data-i18n="foot.tm">Claude Code is a trademark of Anthropic. Not affiliated.</div>
-      <div><a href="https://github.com/thanhson0514/cc-monitor/issues" data-i18n="foot.issue">Report an issue</a></div>
+      <div><a href="https://github.com/wik1ngst-1103/cc-monitor/issues" data-i18n="foot.issue">Report an issue</a></div>
     </div>
   </footer>
 
   <script>
     const VI = {
-      'nav.features': 'Tính năng', 'nav.install': 'Cài đặt',
+      'nav.features': 'Tính năng', 'nav.install': 'Cài đặt', 'nav.control': 'Điều khiển',
       'hero.badge': 'Miễn phí & mã nguồn mở · MIT · Windows & Linux',
       'hero.t1': 'Xem', 'hero.t2': 'AI coding agent', 'hero.t3': 'đang làm gì — theo thời gian thực.',
-      'hero.sub': 'ccmon biến các phiên Claude Code thành một màn hình gọn gàng, cập nhật trực tiếp: từng prompt, lệnh, file đã sửa, subagent và workflow, kèm diff hai cột và hạn mức gói. Ứng dụng chỉ đọc những gì agent đã tự lưu trên máy bạn.',
+      'hero.sub': 'ccmon biến các phiên Claude Code thành một màn hình gọn gàng, cập nhật trực tiếp: từng prompt, lệnh, file đã sửa, subagent, workflow và tác vụ nền, kèm diff hai cột và hạn mức gói. Chạy session ngay trong ccmon và quản lý skill, plugin, MCP server, agent, workflow cho từng session.',
       'hero.download': 'Tải về', 'hero.star': 'Star trên GitHub', 'hero.works': 'Hỗ trợ',
       'f.eyebrow': 'Tính năng', 'f.title': 'Mọi việc agent làm, trong một cửa sổ',
       'f.lead': 'Thôi cuộn terminal để đoán chuyện gì đã xảy ra. ccmon theo dõi phiên chính và mọi agent nó tạo ra, ngay khi chúng làm việc.',
@@ -281,7 +331,23 @@ cargo run --release -p cc-monitor   # terminal UI</code></pre>
       'f3.t': 'Diff hai cột', 'f3.d': 'Mọi file phiên đã sửa, so với trước phiên (hoặc với git HEAD), hiển thị hai cột thẳng hàng.',
       'f4.t': 'File, ảnh & log', 'f4.d': 'Ảnh bạn dán vào, ảnh chụp agent tạo, file đã đọc/ghi, thư mục nháp và log lệnh ✓/✗ — có xem trước và render Markdown.',
       'f5.t': 'Hạn mức trong nháy mắt', 'f5.d': 'Model, context đã dùng, hạn mức 5 giờ và tuần, effort, nhánh git và số dòng thay đổi trong một thanh trạng thái gọn.',
-      'f6.t': 'Cục bộ & chỉ đọc', 'f6.d': 'Không tài khoản, không gọi mạng, không telemetry. ccmon đọc transcript mà agent đã ghi và không bao giờ sửa chúng.',
+      'f6.t': 'Cục bộ, không telemetry', 'f6.d': 'Không tài khoản, ccmon không tự gọi mạng, không telemetry. Chỉ đọc, trừ khi bạn chạy session từ ccmon hoặc lưu một agent; transcript không bao giờ bị sửa.',
+      'f7.t': 'Tác vụ nền chi tiết', 'f7.d': 'Thẻ Yield liệt kê agent đang chờ gì — shell, monitor, subagent, workflow — với trạng thái trực tiếp và tác vụ nào đã đánh thức nó. Bash và Monitor chạy nền hiện trạng thái và phần cuối output trực tiếp.',
+      'f8.t': 'Thư viện', 'f8.d': 'Skill, plugin và MCP server có trên đĩa hoặc được session công bố, kèm “đã dùng ×n” hay “khả dụng” cho session đang chọn và công tắc bật/tắt theo session.',
+      'f9.t': 'Agents & workflow', 'f9.d': 'Agent và workflow có sẵn, của plugin, người dùng và dự án trong một danh sách. Tạo hoặc sửa agent của bạn, tắt một agent trong ccmon mà không mất file hay lịch sử chạy, mở lại các lượt đã chạy.',
+      'f10.t': 'Chạy session từ ccmon', 'f10.d': 'Gõ prompt để tiếp tục một session hoặc mở session mới. Chọn model, effort, chế độ quyền và agent chính; nhắc agent bằng <code>@</code>.',
+      'f11.t': 'Header gọn', 'f11.d': 'Một thanh mảnh với nút chuyển Luồng / Thư viện / Agents (<code>Ctrl+1/2/3</code>), nhường chỗ cho timeline.',
+      'f12.t': 'Đang làm gì', 'f12.d': 'Một dòng trực tiếp dưới timeline: đang chạy tool nào, chờ agent con, suy nghĩ, trả lời hay đang chờ bạn — kèm thời gian đã trôi.',
+      'c.eyebrow': 'Trung tâm điều khiển', 'c.title': 'Lái session, không chỉ ngồi xem',
+      'c.lead': 'Ô soạn dưới timeline chạy chính lệnh <code>claude</code> trên máy bạn. Mọi lựa chọn áp dụng từ lượt sau qua cờ CLI của Claude Code.',
+      'c.c1': 'Model, effort, chế độ quyền và agent chính dưới dạng chip',
+      'c.c2': 'Tắt skill, plugin, MCP server, agent, workflow cho riêng một session — settings.json của bạn không bị sửa',
+      'c.c3': 'Nhắc <code>@agent</code> được tô sáng và liệt kê dưới prompt',
+      'c.n1': 'Session đang mở ở terminal chỉ xem; ccmon không bao giờ tiếp quản.',
+      'c.n2': 'Session chạy từ ccmon không có hộp thoại duyệt: tool cần duyệt sẽ bị từ chối, trừ khi bạn chọn chế độ quyền thoáng hơn.',
+      'c.n3': 'Skill và agent bị tắt sẽ bị chặn khi gọi, nhưng model vẫn thấy chúng trong danh sách.',
+      'c.lib': '<b>Thư viện</b> — cái gì đã cài, session được cung cấp gì và thực sự đã dùng gì.',
+      'c.ag': '<b>Agents</b> — sửa agent của bạn, tắt một agent trong ccmon, mở lại bất kỳ lượt chạy nào.',
       'd.eyebrow': 'Xem thay đổi', 'd.title': 'Chính xác đã sửa những gì?', 'd.lead': 'Mở “Thay đổi” để xem mọi file phiên đã đụng vào và so sánh từng file hai cột.',
       'd.c1': 'Bản gốc “trước phiên” lấy từ bản sao lưu file của chính Claude Code — không cần git',
       'd.c2': 'Chuyển sang so với git HEAD khi file nằm trong repo', 'd.c3': 'Gấp đoạn không đổi, tô màu cú pháp',
@@ -292,7 +358,7 @@ cargo run --release -p cc-monitor   # terminal UI</code></pre>
       'h.eyebrow': 'Cách hoạt động', 'h.title': 'Không phải đổi cách bạn làm việc',
       'h1.t': 'Dùng agent như thường', 'h1.d': 'Chạy Claude Code trong terminal hay editor, y như hiện tại.',
       'h2.t': 'ccmon đọc transcript', 'h2.d': 'Theo dõi <code>~/.claude/projects</code> (trễ khoảng 0,4 giây) và dựng cây luồng.',
-      'h3.t': 'Theo dõi, xem lại, làm tiếp', 'h3.d': 'Xem từng bước khi nó diễn ra, mở subagent, xem diff và file, rồi quay lại agent.',
+      'h3.t': 'Theo dõi, xem lại, làm tiếp', 'h3.d': 'Xem từng bước khi nó diễn ra, mở subagent, xem diff và file, rồi trả lời ngay trong ccmon hoặc quay lại terminal.',
       'i.eyebrow': 'Cài đặt', 'i.title': 'Tải về và chạy', 'i.lead': 'Bộ cài được GitHub Actions build cho mỗi bản phát hành.', 'i.src': 'Từ mã nguồn',
       'i.w1': 'Tải <code>ccmon_x.y.z_x64-setup.exe</code> ở bản phát hành mới nhất.',
       'i.w2': 'Chạy file — cài cho riêng tài khoản của bạn, không cần quyền admin. WebView2 tự cài nếu máy chưa có.',
@@ -300,8 +366,8 @@ cargo run --release -p cc-monitor   # terminal UI</code></pre>
       'i.l1': 'Tải <code>ccmon_x.y.z_amd64.deb</code> ở bản phát hành mới nhất (Debian, Ubuntu và các bản dựa trên chúng).', 'i.l2': 'Cài đặt rồi mở <b>ccmon</b> từ menu ứng dụng:',
       'q.title': 'Câu hỏi thường gặp',
       'q1.q': 'ccmon có phải của Anthropic không?', 'q1.a': 'Không. ccmon là dự án cộng đồng độc lập. Claude Code là sản phẩm của Anthropic; ccmon không liên kết và không được Anthropic bảo trợ.',
-      'q2.q': 'Ứng dụng có gửi code hay prompt của tôi đi đâu không?', 'q2.a': 'Không. Mọi thứ ở lại trên máy bạn. ccmon không gọi mạng và không có telemetry.',
-      'q3.q': 'Nó có sửa phiên hay cài đặt của tôi không?', 'q3.a': 'Chỉ đọc. Ngoại lệ duy nhất là tuỳ chọn: bọc status line của Claude Code để đọc hạn mức — có sao lưu settings.json và gỡ được trong Cài đặt.',
+      'q2.q': 'Ứng dụng có gửi code hay prompt của tôi đi đâu không?', 'q2.a': 'Không. Bản thân ccmon không gọi mạng và không có telemetry. Session bạn chạy từ ccmon là session Claude Code bình thường, dùng chính bản <code>claude</code> đã cài trên máy.',
+      'q3.q': 'Nó có sửa phiên hay cài đặt của tôi không?', 'q3.a': 'Chỉ khi bạn yêu cầu. Theo dõi thì chỉ đọc. ccmon ghi trạng thái riêng (công tắc theo session, agent đã tắt) trong thư mục cấu hình của nó, file agent bạn lưu từ trang Agents sau khi xác nhận, và — nếu bạn chọn — bọc status line để đọc hạn mức, có sao lưu settings.json và gỡ được. Công tắc theo session dùng cờ khởi chạy; settings.json, file skill, plugin và MCP không bao giờ bị sửa.',
       'q4.q': 'Sao không xem được toàn bộ phần suy nghĩ của model?', 'q4.a': 'Claude Code lưu phần suy luận ở dạng mã hoá hoặc không lưu vào transcript. ccmon hiện những gì có: ghi chú tiến độ ngắn và thời gian suy nghĩ.',
       'q5.q': 'Tôi có được dùng thương mại hay sửa code không?', 'q5.a': 'Có — giấy phép MIT. Muốn sửa code, hãy fork repo và mở pull request, hoặc báo lỗi qua issue.',
       'foot.tm': 'Claude Code là thương hiệu của Anthropic. Không liên kết.', 'foot.issue': 'Báo lỗi'
@@ -333,7 +399,7 @@ cargo run --release -p cc-monitor   # terminal UI</code></pre>
     }
     const os = detectOS(navigator.userAgent || '', (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '');
     window.__ccmonDetectOS = detectOS;
-    const RELEASES = 'https://github.com/thanhson0514/cc-monitor/releases/latest';
+    const RELEASES = 'https://github.com/wik1ngst-1103/cc-monitor/releases/latest';
     let assets = null;
     function updateDownload() {
       const vi = document.documentElement.lang === 'vi';
@@ -352,7 +418,7 @@ cargo run --release -p cc-monitor   # terminal UI</code></pre>
         ? `${vi ? 'Dùng' : 'On'} ${names[other]}? <a href="${btn[other].href}">${vi ? 'Tải bản' : 'Get the'} ${ext[other]}</a>`
         : '';
     }
-    fetch('https://api.github.com/repos/thanhson0514/cc-monitor/releases/latest')
+    fetch('https://api.github.com/repos/wik1ngst-1103/cc-monitor/releases/latest')
       .then((r) => (r.ok ? r.json() : null))
       .then((rel) => { if (rel && rel.assets) { assets = rel.assets; updateDownload(); } })
       .catch(() => {});

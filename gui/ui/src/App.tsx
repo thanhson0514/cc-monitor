@@ -5,9 +5,15 @@ import { Chat } from './Chat';
 import { Sidebar, Viewer } from './Sidebar';
 import { ChangesPanel } from './Changes';
 import { Setup } from './Setup';
+import { Library } from './Library';
+import { Agents } from './Agents';
+import { Composer } from './Composer';
+import { AppHeader, AssetsIcon, DiffIcon, HeadIconBtn, Page, PAGE_TITLE } from './Header';
 import logo from './assets/logo.png';
 
 const PAGE = 400;
+/** How long a just-started session may take to show up in the tree before we say so. */
+const START_TIMEOUT_MS = 15000;
 
 const STATUS_DOT: Record<string, string> = { running: '●', done: '✓', error: '✗', idle: '○' };
 
@@ -112,7 +118,8 @@ function Tree({
     onSelect,
     onOpenOld,
     onSettings,
-    onCollapse
+    onCollapse,
+    onNewSession
 }: {
     rows: TreeRow[];
     selected: string | null;
@@ -120,6 +127,7 @@ function Tree({
     onOpenOld: (sid: string) => void;
     onSettings: () => void;
     onCollapse: () => void;
+    onNewSession: () => void;
 }) {
     const blocks = sessionBlocks(rows);
     const open = blocks.filter((b) => b[0].open);
@@ -153,7 +161,12 @@ function Tree({
                     <PanelIcon open />
                 </button>
             </div>
-            <div className="pane-title">Đang mở · {open.length}</div>
+            <div className="pane-title pane-title-row">
+                <span>Đang mở · {open.length}</span>
+                <button type="button" className="new-sess-btn" onClick={onNewSession} title="Chạy một session Claude Code mới từ ccmon">
+                    + Session mới…
+                </button>
+            </div>
             {open.length === 0 && <div className="muted pad small">Không có phiên nào đang chạy.</div>}
             {open.map((b) => (
                 <TreeRows key={b[0].key} rows={b} selected={selected} onSelect={onSelect} />
@@ -201,6 +214,40 @@ function Tree({
     );
 }
 
+/** Pick the working directory of a new managed session (projects ccmon already knows). */
+function NewSessionPicker({ onPick, onClose }: { onPick: (cwd: string) => void; onClose: () => void }) {
+    const [list, setList] = useState<string[] | null>(null);
+    const [filter, setFilter] = useState('');
+    useEffect(() => {
+        api.projects().then(setList).catch(() => setList([]));
+    }, []);
+    const q = filter.trim().toLowerCase();
+    const shown = (list ?? []).filter((p) => !q || p.toLowerCase().includes(q));
+    return (
+        <div className="viewer-backdrop" onClick={onClose}>
+            <div className="setup new-sess" onClick={(e) => e.stopPropagation()}>
+                <h2>Session mới</h2>
+                <p className="muted small">Chọn thư mục làm việc (các project đã có session trong 30 ngày qua).</p>
+                <input className="lib-filter new-sess-filter" autoFocus placeholder="Lọc theo đường dẫn…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+                <div className="new-sess-list">
+                    {list === null && <div className="muted small">Đang tải…</div>}
+                    {list !== null && shown.length === 0 && <div className="muted small">Không có project nào.</div>}
+                    {shown.map((p) => (
+                        <button key={p} type="button" className="hist-row new-sess-row" onClick={() => onPick(p)} title={p}>
+                            <span className="tree-label">{p}</span>
+                        </button>
+                    ))}
+                </div>
+                <div className="setup-actions">
+                    <button type="button" className="btn" onClick={onClose}>
+                        Huỷ
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 /** Small labelled usage bar; colour shifts as it fills. */
 function Meter({ label, value, detail, title }: { label: string; value: number | null; detail?: string; title: string }) {
     const level = value == null ? 'none' : value >= 85 ? 'high' : value >= 60 ? 'mid' : 'low';
@@ -224,7 +271,7 @@ function StatusBar({ s }: { s: StatusInfo | null }) {
     return (
         <footer className="statusbar">
             <div className="sb-group">
-                <span className="sb-chip sb-model" title="Model">
+                <span className="sb-chip sb-model" title={s.nodeSub ? 'Model của subagent đang chọn' : 'Model'}>
                     {s.model ?? '—'}
                 </span>
                 {s.effort && (
@@ -309,6 +356,16 @@ function activityOf(view: ThreadView | null, row: TreeRow | undefined, rows: Tre
     }
     const running = [...items].reverse().find((it): it is Extract<typeof it, { type: 'tool' }> => it.type === 'tool' && it.state === 'running');
     if (running) {
+        if (running.name === 'Yield') {
+            const names = running.waits.map((w) => w.label);
+            const shown = names.slice(0, 2).join(', ');
+            const more = names.length > 2 ? ` (+${names.length - 2})` : '';
+            return {
+                state: 'busy',
+                text: names.length ? `Đang chờ: ${shown}${more}` : 'Đang chờ tác vụ nền',
+                since: running.started ?? turnStart
+            };
+        }
         if (running.link)
             return {
                 state: 'busy',
@@ -365,6 +422,7 @@ function WorkflowView({ rows, wfKey, onSelect }: { rows: TreeRow[]; wfKey: strin
 }
 
 export default function App() {
+    const [page, setPage] = useState<Page>('thread');
     const [rows, setRows] = useState<TreeRow[]>([]);
     const [selected, setSelected] = useState<string | null>(null);
     const [userPicked, setUserPicked] = useState(false);
@@ -375,6 +433,12 @@ export default function App() {
     const [history, setHistory] = useState<string[]>([]);
     const [panel, setPanel] = useState<'assets' | 'changes' | null>('assets');
     const [setup, setSetup] = useState<'first' | 'settings' | null>(null);
+    const [picking, setPicking] = useState(false);
+    const [newCwd, setNewCwd] = useState<string | null>(null);
+    /** A session ccmon just started whose tree row has not appeared yet. While set,
+     *  the header, chat and Composer belong to it (never to the previous selection). */
+    const [starting, setStarting] = useState<{ sid: string; cwd: string } | null>(null);
+    const [startSlow, setStartSlow] = useState(false);
     useEffect(() => {
         api.setup().then((i) => !i.config.setupDone && setSetup('first'));
     }, []);
@@ -395,9 +459,13 @@ export default function App() {
     }, [treeOpen]);
     useEffect(() => {
         const k = (e: KeyboardEvent) => {
-            if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'b') {
+            if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return;
+            if (e.key.toLowerCase() === 'b') {
                 e.preventDefault();
                 setTreeOpen((o) => !o);
+            } else if (e.key === '1' || e.key === '2' || e.key === '3') {
+                e.preventDefault();
+                setPage((['thread', 'library', 'agents'] as const)[Number(e.key) - 1]);
             }
         };
         window.addEventListener('keydown', k);
@@ -421,6 +489,18 @@ export default function App() {
 
     // Auto-select the most recently active session until the user picks a node.
     useEffect(() => {
+        if (starting) {
+            // A started session's row is pending: only its arrival changes the selection.
+            const k = `m:${starting.sid}`;
+            if (rows.some((r) => r.key === k)) {
+                pendingOpen.current = null;
+                setStarting(null);
+                setTail(PAGE);
+                setView(null);
+                setSelected(k);
+            }
+            return;
+        }
         if (pendingOpen.current && rows.some((r) => r.key === pendingOpen.current)) {
             const k = pendingOpen.current;
             pendingOpen.current = null;
@@ -431,7 +511,19 @@ export default function App() {
         const valid = selected && rows.some((r) => r.key === selected);
         const first = (rows.find((r) => r.depth === 0 && r.live === 'busy') ?? rows.find((r) => r.depth === 0 && r.live) ?? rows[0]).key;
         if (!valid || (!userPicked && first !== selected)) setSelected(first);
-    }, [rows, selected, userPicked]);
+    }, [rows, selected, userPicked, starting]);
+
+    // The new row normally shows up within seconds. If it does not, stay on the new
+    // session's placeholder (its Composer still works) and say so; ask the worker again.
+    useEffect(() => {
+        setStartSlow(false);
+        if (!starting) return;
+        const t = setTimeout(() => {
+            setStartSlow(true);
+            api.openSession(starting.sid);
+        }, START_TIMEOUT_MS);
+        return () => clearTimeout(t);
+    }, [starting]);
 
     useEffect(() => {
         if (!selected) return;
@@ -515,7 +607,14 @@ export default function App() {
         setFollowing(atBottom);
     };
 
+    const clearStarting = () => {
+        if (starting) pendingOpen.current = null;
+        setStarting(null);
+    };
+
     const select = (key: string) => {
+        setNewCwd(null);
+        clearStarting();
         if (key === selected) return;
         if (selected) setHistory((h) => [...h.slice(-50), selected]);
         setUserPicked(true);
@@ -528,6 +627,8 @@ export default function App() {
         const prev = history[history.length - 1];
         if (!prev) return;
         setHistory((h) => h.slice(0, -1));
+        clearStarting();
+        if (prev === selected) return; // leaving a starting placeholder: the view is intact
         setTail(PAGE);
         setView(null);
         setSelected(prev);
@@ -535,68 +636,120 @@ export default function App() {
 
     const row = rows.find((r) => r.key === selected);
 
+    const started = (sid: string) => {
+        if (newCwd) setStarting({ sid, cwd: newCwd });
+        setNewCwd(null);
+        setUserPicked(true);
+        // `selected` (and its view) stay as they are underneath: going back or
+        // re-picking that row must not land on an empty view.
+        if (selected) setHistory((h) => [...h.slice(-50), selected]);
+        pendingOpen.current = `m:${sid}`;
+        api.openSession(sid);
+    };
+
+    // The Composer stays under a session's subagent threads too (it always talks to
+    // the main session); its model/effort chips then show the selected subagent's.
+    const rowSid = row && row.kind !== 'workflow' ? row.key.split(':')[1] ?? null : null;
+    const mainRow = rowSid ? rows.find((r) => r.key === `m:${rowSid}`) : undefined;
+    const composerSid = starting ? starting.sid : mainRow && mainRow.tool !== 'codex' ? rowSid : null;
+    /** Session id the Library/Agents pages and side panels should follow. */
+    const pageSid = starting ? starting.sid : selected ? selected.split(':')[1] ?? null : null;
+    const panelKey = starting ? null : selected;
+
     const openOld = (sid: string) => {
+        clearStarting();
         setUserPicked(true);
         pendingOpen.current = `m:${sid}`;
         api.openSession(sid);
     };
 
+    /** Open a run from the Agents page in the thread view (loading an old session if needed). */
+    const openRun = (key: string, sid: string) => {
+        setPage('thread');
+        setNewCwd(null);
+        clearStarting();
+        if (rows.some((r) => r.key === key)) {
+            select(key);
+            return;
+        }
+        // Not in the tree yet: keep the current view until the worker loads it.
+        if (selected) setHistory((h) => [...h.slice(-50), selected]);
+        setUserPicked(true);
+        pendingOpen.current = key;
+        api.openSession(sid);
+    };
+
     return (
-        <div className={`app ${showSidebar ? 'with-sidebar' : ''} ${treeOpen ? '' : 'tree-collapsed'}`}>
+        <div className={`app ${showSidebar && page === 'thread' && panelKey ? 'with-sidebar' : ''} ${treeOpen ? '' : 'tree-collapsed'}`}>
             {treeOpen ? (
                 <Tree
                     rows={rows}
-                    selected={selected}
+                    selected={panelKey}
                     onSelect={select}
                     onOpenOld={openOld}
                     onSettings={() => setSetup('settings')}
                     onCollapse={() => setTreeOpen(false)}
+                    onNewSession={() => setPicking(true)}
                 />
             ) : (
-                <TreeRail rows={rows} selected={selected} onSelect={select} onExpand={() => setTreeOpen(true)} />
+                <TreeRail rows={rows} selected={panelKey} onSelect={select} onExpand={() => setTreeOpen(true)} />
             )}
-            <main className="main">
-                <header className="thread-head">
-                    {history.length > 0 && (
-                        <button className="back-btn" type="button" onClick={back} title="Quay lại luồng trước">
-                            ←
-                        </button>
+            {page !== 'thread' && (
+                <main className="main">
+                    <AppHeader page={page} onPage={setPage} lead={<span className="thread-title">{PAGE_TITLE[page]}</span>} />
+                    {page === 'library' ? (
+                        <Library sid={pageSid} sessionLabel={starting ? 'Session mới' : row?.label ?? null} />
+                    ) : (
+                        <Agents sid={pageSid} onOpenRun={openRun} />
                     )}
-                    <span className="thread-title">{row?.label ?? view?.title ?? 'ccmon'}</span>
-                    {row && <span className={`badge st-${row.status}`}>{row.status}</span>}
-                    <div className="panel-btns">
-                        <button
-                            type="button"
-                            className={`sb-toggle ${panel === 'assets' ? 'on' : ''}`}
-                            onClick={() => setPanel(panel === 'assets' ? null : 'assets')}
-                            title="Ảnh, file, log của luồng"
-                        >
-                            🗂 Quản lý
-                        </button>
-                        <button
-                            type="button"
-                            className={`sb-toggle ${panel === 'changes' ? 'on' : ''}`}
-                            onClick={() => setPanel(panel === 'changes' ? null : 'changes')}
-                            title="File đã sửa trong phiên, xem diff hai cột"
-                        >
-                            ± Thay đổi
-                        </button>
-                    </div>
-                    {!following && (
-                        <button
-                            className="follow-btn"
-                            type="button"
-                            onClick={() => {
-                                stickBottom.current = true;
-                                setFollowing(true);
-                                const el = scroller.current;
-                                if (el) el.scrollTop = el.scrollHeight;
-                            }}
-                        >
-                            ↓ Mới nhất
-                        </button>
-                    )}
-                </header>
+                </main>
+            )}
+            <main className="main" style={page !== 'thread' ? { display: 'none' } : undefined}>
+                <AppHeader
+                    page={page}
+                    onPage={setPage}
+                    lead={
+                        <>
+                            {history.length > 0 && (
+                                <button className="back-btn" type="button" onClick={back} title="Quay lại luồng trước" aria-label="Quay lại luồng trước">
+                                    ←
+                                </button>
+                            )}
+                            <span className="thread-title">
+                                {newCwd
+                                    ? `Session mới · ${newCwd}`
+                                    : starting
+                                      ? `Session mới · ${startSlow ? 'chưa thấy trong danh sách' : 'đang mở…'}`
+                                      : row?.label ?? view?.title ?? 'ccmon'}
+                            </span>
+                            {row && !newCwd && !starting && <span className={`badge st-${row.status}`}>{row.status}</span>}
+                            {!following && (
+                                <button
+                                    className="follow-btn"
+                                    type="button"
+                                    onClick={() => {
+                                        stickBottom.current = true;
+                                        setFollowing(true);
+                                        const el = scroller.current;
+                                        if (el) el.scrollTop = el.scrollHeight;
+                                    }}
+                                >
+                                    ↓ Mới nhất
+                                </button>
+                            )}
+                        </>
+                    }
+                    actions={
+                        <>
+                            <HeadIconBtn label="Quản lý: ảnh, file, log của luồng" on={panel === 'assets'} onClick={() => setPanel(panel === 'assets' ? null : 'assets')}>
+                                <AssetsIcon />
+                            </HeadIconBtn>
+                            <HeadIconBtn label="Thay đổi: file đã sửa trong phiên, diff hai cột" on={panel === 'changes'} onClick={() => setPanel(panel === 'changes' ? null : 'changes')}>
+                                <DiffIcon />
+                            </HeadIconBtn>
+                        </>
+                    }
+                />
                 <div
                     className="chat"
                     ref={scroller}
@@ -608,12 +761,29 @@ export default function App() {
                     tabIndex={0}
                 >
                     <div ref={content}>
-                    {view && view.total > view.items.length && (
+                    {!starting && view && view.total > view.items.length && (
                         <button className="more-btn" type="button" onClick={() => setTail((t) => t + PAGE)}>
                             Hiện thêm {Math.min(PAGE, view.total - view.items.length)} mục cũ hơn ({view.total - view.items.length} còn lại)
                         </button>
                     )}
-                    {selected?.startsWith('w:') ? (
+                    {newCwd ? (
+                        <div className="muted pad">
+                            Session mới trong <code>{newCwd}</code>. Chọn model, effort, quyền và capability bên dưới rồi gửi prompt đầu tiên.
+                        </div>
+                    ) : starting ? (
+                        <div className={`muted pad ${startSlow ? 'start-slow' : ''}`} role="status">
+                            {startSlow ? (
+                                <>
+                                    Session <code>{starting.sid}</code> đã chạy trong <code>{starting.cwd}</code> nhưng chưa xuất hiện trong danh sách sau{' '}
+                                    {START_TIMEOUT_MS / 1000} giây. Bạn vẫn đang ở session mới này — prompt gửi bên dưới đi vào chính nó; luồng sẽ hiện khi transcript được ghi.
+                                </>
+                            ) : (
+                                <>
+                                    Đang mở session mới <code>{starting.sid}</code> trong <code>{starting.cwd}</code>… Prompt gửi bên dưới đi vào session này.
+                                </>
+                            )}
+                        </div>
+                    ) : selected?.startsWith('w:') ? (
                         <WorkflowView rows={rows} wfKey={selected} onSelect={select} />
                     ) : view ? (
                         <Chat view={view} now={now} onOpen={select} />
@@ -622,19 +792,35 @@ export default function App() {
                     )}
                     </div>
                 </div>
-                <ActivityBar a={activityOf(view && view.key === selected ? view : null, row, rows)} now={now} />
+                {!newCwd && !starting && <ActivityBar a={activityOf(view && view.key === selected ? view : null, row, rows)} now={now} />}
+                {newCwd ? (
+                    <Composer key={`new:${newCwd}`} sid={null} cwd={newCwd} onStarted={started} />
+                ) : (
+                    composerSid && <Composer key={composerSid} sid={composerSid} cwd={starting ? starting.cwd : null} current={status} />
+                )}
                 <StatusBar s={status} />
             </main>
-            {panel === 'assets' && selected && (
-                <Sidebar nodeKey={selected} refreshTick={Math.floor(assetTick / 8)} onOpenThread={select} />
+            {page === 'thread' && panel === 'assets' && panelKey && (
+                <Sidebar nodeKey={panelKey} refreshTick={Math.floor(assetTick / 8)} onOpenThread={select} />
             )}
-            {panel === 'changes' && selected && <ChangesPanel nodeKey={selected} refreshTick={Math.floor(assetTick / 8)} initial={startup.diff} />}
+            {page === 'thread' && panel === 'changes' && panelKey && <ChangesPanel nodeKey={panelKey} refreshTick={Math.floor(assetTick / 8)} initial={startup.diff} />}
             {setup && (
                 <Setup
                     canClose={setup === 'settings'}
                     onDone={() => {
                         setSetup(null);
                         loadTree();
+                    }}
+                />
+            )}
+            {picking && (
+                <NewSessionPicker
+                    onClose={() => setPicking(false)}
+                    onPick={(cwd) => {
+                        setPicking(false);
+                        setPage('thread');
+                        clearStarting();
+                        setNewCwd(cwd);
                     }}
                 />
             )}

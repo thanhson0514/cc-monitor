@@ -27,6 +27,24 @@ export interface LinkInfo {
     report: string | null;
 }
 
+export interface BgTask {
+    id: string;
+    kind: 'shell' | 'monitor' | 'agent' | 'workflow';
+    label: string;
+    state: 'running' | 'completed' | 'failed' | 'killed' | 'unknown';
+    started: number | null;
+    ended: number | null;
+    summary: string | null;
+    outputFile: string | null;
+}
+
+export interface TailDto {
+    text: string;
+    truncated: boolean;
+    gone: boolean;
+    size: number;
+}
+
 export type Item =
     | { type: 'prompt'; idx: number; ts: number | null; text: string }
     | { type: 'turn'; idx: number; ts: number | null; model: string | null; input: number; output: number }
@@ -47,6 +65,9 @@ export type Item =
           resultPreview: string;
           hasMore: boolean;
           link: LinkInfo | null;
+          bg: BgTask | null;
+          waits: BgTask[];
+          wokeBy: string | null;
       }
     | { type: 'compact'; idx: number; ts: number | null; pre: number; post: number }
     | { type: 'system'; idx: number; ts: number | null; text: string };
@@ -62,7 +83,12 @@ export interface ThreadView {
 }
 
 export interface StatusInfo {
+    /** Model label of the selected node (subagent's own, else the session's). */
     model: string | null;
+    /** Raw model id behind `model` (e.g. `claude-opus-5-5`). */
+    modelId: string | null;
+    /** `model` / `effort` come from the selected subagent thread. */
+    nodeSub: boolean;
     ctx: number | null;
     win: number | null;
     winEstimated: boolean;
@@ -190,7 +216,150 @@ export interface SetupInfo {
     statuslineWrapped: boolean;
 }
 
+export type CapKind = 'skill' | 'plugin' | 'mcp' | 'agent' | 'workflow';
+export type CapScope = 'user' | 'project' | 'builtIn' | 'managed' | { plugin: string };
+
+export interface Capability {
+    kind: CapKind;
+    id: string;
+    name: string;
+    description: string;
+    scope: CapScope;
+    path: string | null;
+    enabledGlobally: boolean;
+    meta: Record<string, unknown>;
+}
+
+/** Agent or workflow on the Agents page (`list_agents` / `list_workflows`). */
+export interface AgentItem extends Capability {
+    disabled: boolean;
+    runs: number;
+    lastRun: number | null;
+    body: string | null;
+    editable: boolean;
+    /** Prompt larger than ccmon shows: read-only here. */
+    truncated: boolean;
+}
+
+export interface RunRecord {
+    sessionId: string;
+    project: string;
+    nodeKey: string;
+    started: number | null;
+    ended: number | null;
+    status: string;
+    description: string;
+}
+
+export interface AgentDef {
+    name: string;
+    description: string;
+    tools: string[] | null;
+    model: string | null;
+    prompt: string;
+}
+
+/** Error prefix of `save_agent` when the target file exists. */
+export const EXISTS_PREFIX = 'EXISTS:';
+
+export interface Usage {
+    kind: CapKind;
+    id: string;
+    state: 'unavailable' | 'available' | 'used';
+    count: number;
+    last: number | null;
+}
+
+export interface Overlay {
+    model: string | null;
+    effort: string | null;
+    permissionMode: string | null;
+    disabledSkills: string[];
+    disabledPlugins: string[];
+    disabledMcp: string[];
+    disabledAgents: string[];
+    disabledWorkflows: string[];
+    workflowsOff: boolean;
+    mainAgent: string | null;
+}
+
+export type RunState =
+    | { kind: 'idle' }
+    | { kind: 'starting' }
+    | { kind: 'busy' }
+    | { kind: 'restarting' }
+    | { kind: 'exited'; code: number | null; stderrTail: string };
+
+export interface ControlDto {
+    overlay: Overlay;
+    runState: RunState | null;
+    canControl: boolean;
+    reason: 'liveElsewhere' | 'claudeNotFound' | null;
+    models: string[];
+    /** Display label per `models` entry (same formatting as the status bar). */
+    modelLabels: string[];
+    efforts: string[];
+    pending: boolean;
+    registryAgents: string[];
+    registryWorkflows: string[];
+}
+
+export const EMPTY_OVERLAY: Overlay = {
+    model: null,
+    effort: null,
+    permissionMode: null,
+    disabledSkills: [],
+    disabledPlugins: [],
+    disabledMcp: [],
+    disabledAgents: [],
+    disabledWorkflows: [],
+    workflowsOff: false,
+    mainAgent: null
+};
+
+const DISABLED_FIELD: Record<CapKind, 'disabledSkills' | 'disabledPlugins' | 'disabledMcp' | 'disabledAgents' | 'disabledWorkflows'> = {
+    skill: 'disabledSkills',
+    plugin: 'disabledPlugins',
+    mcp: 'disabledMcp',
+    agent: 'disabledAgents',
+    workflow: 'disabledWorkflows'
+};
+
+/** Off for this session per the overlay (the only source of truth for "disabled"). */
+export function capDisabled(o: Overlay, kind: CapKind, id: string): boolean {
+    return o[DISABLED_FIELD[kind]].includes(id);
+}
+
+export function toggleCap(o: Overlay, kind: CapKind, id: string): Overlay {
+    const f = DISABLED_FIELD[kind];
+    const cur = o[f];
+    return { ...o, [f]: cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id].sort() };
+}
+
+export function isBusy(r: RunState | null): boolean {
+    return r?.kind === 'busy' || r?.kind === 'restarting' || r?.kind === 'starting';
+}
+
 export const api = {
+    control: (sid: string | null) => invoke<ControlDto>('get_control', { sid }),
+    setOverlay: (sid: string, overlay: Overlay) => invoke<ControlDto>('set_overlay', { sid, overlay }),
+    sendPrompt: (sid: string | null, cwd: string, text: string, overlay: Overlay | null) =>
+        invoke<string>('send_prompt', { sid, cwd, text, overlay }),
+    interrupt: (sid: string) => invoke<void>('interrupt', { sid }),
+    stopManaged: (sid: string) => invoke<boolean>('stop_managed', { sid }),
+    projects: () => invoke<string[]>('list_projects'),
+    catalog: (sid: string | null) => invoke<Capability[]>('get_catalog', { sid }),
+    listAgents: (sid: string | null, cwd: string | null, light = false) => invoke<AgentItem[]>('list_agents', { sid, cwd, light }),
+    listWorkflows: (sid: string | null, cwd: string | null) => invoke<AgentItem[]>('list_workflows', { sid, cwd }),
+    sessionProject: (sid: string) => invoke<string | null>('session_project', { sid }),
+    agentTools: () => invoke<string[]>('agent_tools'),
+    agentHistory: (name: string, days: number) => invoke<RunRecord[]>('agent_history', { name, days }),
+    workflowHistory: (name: string, days: number) => invoke<RunRecord[]>('workflow_history', { name, days }),
+    setAgentDisabled: (name: string, disabled: boolean) => invoke<void>('set_agent_disabled', { name, disabled }),
+    setWorkflowDisabled: (name: string, disabled: boolean) => invoke<void>('set_workflow_disabled', { name, disabled }),
+    saveAgent: (scope: 'user' | 'project', cwd: string | null, def: AgentDef, overwrite: boolean) =>
+        invoke<string>('save_agent', { scope, cwd, def, overwrite }),
+    sessionUsage: (sid: string) => invoke<Usage[]>('get_session_usage', { sid }),
     setup: () => invoke<SetupInfo>('get_setup'),
     saveSetup: (claude: boolean, codex: boolean, statusline: boolean) =>
         invoke<SetupInfo>('save_setup', { claude, codex, statusline }),
@@ -204,6 +373,7 @@ export const api = {
     history: (days: number) => invoke<HistoryProject[]>('list_history', { days }),
     openSession: (sid: string) => invoke<void>('open_session', { sid }),
     assets: (key: string, scope: 'session' | 'thread') => invoke<Assets | null>('get_assets', { key, scope }),
+    tailTaskOutput: (path: string) => invoke<TailDto>('tail_task_output', { path }),
     preview: (path: string) => invoke<Preview>('preview_file', { path }),
     changes: (key: string) => invoke<ChangedFile[] | null>('get_changes', { key }),
     diff: (key: string, path: string, baseline: string | null) => invoke<DiffView | null>('get_diff', { key, path, baseline })

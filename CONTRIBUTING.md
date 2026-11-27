@@ -3,9 +3,9 @@
 Thanks for helping! ccmon is MIT-licensed: you may use, modify, redistribute and sell it.
 To keep one shared source of truth, **changes to the code go through this repository**:
 
-- **Found a bug or have an idea?** Open an [issue](https://github.com/thanhson0514/cc-monitor/issues).
+- **Found a bug or have an idea?** Open an [issue](https://github.com/wik1ngst-1103/cc-monitor/issues).
   Search first; add your OS, ccmon version and Claude Code version.
-- **Want to change code?** [Fork](https://github.com/thanhson0514/cc-monitor/fork) the repo,
+- **Want to change code?** [Fork](https://github.com/wik1ngst-1103/cc-monitor/fork) the repo,
   create a branch, and open a pull request against `main`. For larger changes, open an issue
   first so we can agree on the approach.
 
@@ -38,8 +38,11 @@ python3 demo/make_demo.py /tmp/ccmon-demo   # prints env vars to export
 | `src/` | Core library (`cc_monitor`): Claude Code transcript parser, live store, TUI binary `ccmon` |
 | `gui/src-tauri/` | Desktop app backend (Tauri 2) |
 | `gui/ui/` | Desktop app frontend (React + Vite) |
-| `website/` | Landing page (GitHub Pages) |
+| `website/` | Landing page (GitHub Pages, <https://cc-monitor.online>) |
 | `demo/` | Demo data generator used for screenshots and CI smoke tests |
+
+Architecture notes: [capability catalog and control layer](docs/architecture/capabilities.md)
+(how to add a new capability kind) and [CLI flag spike](docs/architecture/control.md).
 
 ## Pull request checklist
 

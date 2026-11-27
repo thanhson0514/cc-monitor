@@ -63,6 +63,94 @@ pub enum Kind {
         added: u64,
         removed: u64,
     },
+    /// A `<task-notification>` about a finished background task. Stays in the
+    /// `parentUuid` chain like `Link`.
+    TaskNotice(TaskNotice),
+    /// What the session announced as available (`skill_listing`,
+    /// `mcp_instructions_delta`, `agent_listing_delta`, `deferred_tools_delta`).
+    /// Stays in the `parentUuid` chain like `Link`.
+    Inventory(InventoryDelta),
+}
+
+/// Names announced by an inventory attachment. `removed` (when present) lists
+/// names the same attachment took away.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct InventoryDelta {
+    pub skills: Vec<String>,
+    pub mcp: Vec<String>,
+    pub agents: Vec<String>,
+    pub deferred_tools: Vec<String>,
+    pub removed: Option<Box<InventoryDelta>>,
+}
+
+impl InventoryDelta {
+    pub fn is_empty(&self) -> bool {
+        self.skills.is_empty()
+            && self.mcp.is_empty()
+            && self.agents.is_empty()
+            && self.deferred_tools.is_empty()
+            && self.removed.as_ref().is_none_or(|r| r.is_empty())
+    }
+}
+
+fn str_list(a: &Value, key: &str) -> Vec<String> {
+    a.get(key)
+        .and_then(Value::as_array)
+        .map(|v| {
+            v.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// `- name: description` lines of a `skill_listing`; the name may contain `:`
+/// (`plugin:skill`), the description separator is `": "`.
+fn skill_names(content: &str) -> Vec<String> {
+    content
+        .lines()
+        .filter_map(|l| l.trim_start().strip_prefix("- "))
+        .map(|l| l.split_once(": ").map_or(l, |(n, _)| n).trim())
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn inventory_of(a: &Value) -> Option<InventoryDelta> {
+    let mut d = InventoryDelta::default();
+    let mut r = InventoryDelta::default();
+    match a.get("type").and_then(Value::as_str)? {
+        "skill_listing" => {
+            d.skills = skill_names(a.get("content").and_then(Value::as_str).unwrap_or(""))
+        }
+        "mcp_instructions_delta" => {
+            d.mcp = str_list(a, "addedNames");
+            r.mcp = str_list(a, "removedNames");
+        }
+        "agent_listing_delta" => {
+            d.agents = str_list(a, "addedTypes");
+            r.agents = str_list(a, "removedTypes");
+        }
+        "deferred_tools_delta" => {
+            d.deferred_tools = str_list(a, "addedNames");
+            r.deferred_tools = str_list(a, "removedNames");
+        }
+        _ => return None,
+    }
+    if !r.is_empty() {
+        d.removed = Some(Box::new(r));
+    }
+    Some(d)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TaskNotice {
+    pub task_id: String,
+    pub tool_use_id: Option<String>,
+    pub status: String,
+    pub summary: String,
+    pub output_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -77,6 +165,10 @@ pub struct ToolLinkInfo {
     pub agent_id: Option<String>,
     pub run_id: Option<String>,
     pub workflow_name: Option<String>,
+    /// `toolUseResult.status` (e.g. `async_launched`).
+    pub status: Option<String>,
+    /// `toolUseResult.taskId` (workflows: the id their notification uses).
+    pub task_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -106,6 +198,8 @@ pub struct Event {
     pub rate: Option<RateInfo>,
     /// Context window size reported by the tool (Codex `model_context_window`).
     pub window: Option<u64>,
+    /// `toolUseResult.backgroundTaskId` of a tool result that started a background task.
+    pub bg_task_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -140,6 +234,7 @@ impl Event {
             thinking_ms: None,
             rate: None,
             window: None,
+            bg_task_id: None,
         }
     }
 }
@@ -221,9 +316,70 @@ fn quick_skip(line: &str) -> bool {
     String::from_utf8_lossy(head).contains("\"type\":\"api-request")
 }
 
+fn unescape_html(s: &str) -> String {
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+}
+
+fn tag<'a>(s: &'a str, name: &str) -> Option<&'a str> {
+    let open = format!("<{name}>");
+    let start = s.find(&open)? + open.len();
+    let end = start + s[start..].find(&format!("</{name}>"))?;
+    Some(s[start..end].trim())
+}
+
+/// Parse the `<task-notification>` XML-ish block Claude Code queues when a background
+/// task finishes. Tolerant: only `task-id` is required.
+pub fn parse_task_notification(s: &str) -> Option<TaskNotice> {
+    let body = &s[s.find("<task-notification>")?..];
+    let t = |n: &str| tag(body, n).filter(|v| !v.is_empty()).map(unescape_html);
+    Some(TaskNotice {
+        task_id: t("task-id")?,
+        tool_use_id: t("tool-use-id"),
+        status: t("status").unwrap_or_default(),
+        summary: t("summary").unwrap_or_default(),
+        output_file: t("output-file"),
+    })
+}
+
 fn attachment_event(line: &str, head: &Head) -> Option<Event> {
     let mut ev = link_event(head)?;
+    if line.contains("queued_command") && line.contains("<task-notification>") {
+        if let Ok(raw) = serde_json::from_str::<Raw>(line) {
+            let notice = raw
+                .attachment
+                .as_ref()
+                .filter(|a| a.get("type").and_then(Value::as_str) == Some("queued_command"))
+                .and_then(|a| a.get("prompt").and_then(Value::as_str))
+                .and_then(parse_task_notification);
+            if let Some(n) = notice {
+                ev.kind = Kind::TaskNotice(n);
+                ev.ts = raw.timestamp.as_deref().and_then(parse_ts);
+                return Some(ev);
+            }
+        }
+    }
     let head_bytes = &line.as_bytes()[..line.len().min(4096)];
+    if [
+        "skill_listing",
+        "mcp_instructions_delta",
+        "agent_listing_delta",
+        "deferred_tools_delta",
+    ]
+    .iter()
+    .any(|t| line.contains(t))
+    {
+        if let Ok(raw) = serde_json::from_str::<Raw>(line) {
+            if let Some(d) = raw.attachment.as_ref().and_then(inventory_of) {
+                ev.kind = Kind::Inventory(d);
+                ev.ts = raw.timestamp.as_deref().and_then(parse_ts);
+                return Some(ev);
+            }
+        }
+    }
     let has = |pat: &[u8]| head_bytes.windows(pat.len()).any(|w| w == pat);
     if !(has(b"\"type\":\"file\"") || has(b"\"type\":\"directory\"")) {
         return Some(ev);
@@ -309,6 +465,7 @@ pub fn parse_line(line: &str) -> Option<Event> {
         thinking_ms: raw.thinking_duration_ms,
         rate: None,
         window: None,
+        bg_task_id: None,
     };
 
     if let Some(meta) = raw.compact_metadata {
@@ -324,10 +481,13 @@ pub fn parse_line(line: &str) -> Option<Event> {
             agent_id: s("agentId"),
             run_id: s("runId"),
             workflow_name: s("workflowName"),
+            status: s("status"),
+            task_id: s("taskId"),
         };
         if link.agent_id.is_some() || link.run_id.is_some() {
             ev.link = Some(link);
         }
+        ev.bg_task_id = s("backgroundTaskId");
     }
 
     if let Some(msg) = raw.message {
@@ -367,6 +527,16 @@ pub fn parse_line(line: &str) -> Option<Event> {
             .collect();
         ev.prompt = Some(text.join("\n"));
         ev.blocks.clear();
+    }
+    if ev.kind == Kind::User {
+        let notice = ev
+            .prompt
+            .as_deref()
+            .filter(|p| p.trim_start().starts_with("<task-notification>"))
+            .and_then(parse_task_notification);
+        if let Some(n) = notice {
+            ev.kind = Kind::TaskNotice(n);
+        }
     }
     Some(ev)
 }
@@ -584,5 +754,104 @@ mod tests {
     fn truncate_respects_char_boundary() {
         let s = truncate("ăăăă".to_string(), 3);
         assert!(s.starts_with('ă'));
+    }
+
+    #[test]
+    fn parses_task_notification_attachment() {
+        let l = r#"{"type":"attachment","uuid":"u1","parentUuid":"p","attachment":{"type":"queued_command","prompt":"<task-notification>\n<task-id>b9b5g4q3w</task-id>\n<tool-use-id>toolu_1</tool-use-id>\n<output-file>/tmp/claude-1000/x/tasks/b9b5g4q3w.output</output-file>\n<status>failed</status>\n<summary>Background command \"a &amp;&amp; b\" failed (exit code 1)</summary>\n</task-notification>"}}"#;
+        let e = parse_line(l).unwrap();
+        assert_eq!(
+            e.kind,
+            Kind::TaskNotice(TaskNotice {
+                task_id: "b9b5g4q3w".into(),
+                tool_use_id: Some("toolu_1".into()),
+                status: "failed".into(),
+                summary: "Background command \"a && b\" failed (exit code 1)".into(),
+                output_file: Some("/tmp/claude-1000/x/tasks/b9b5g4q3w.output".into())
+            })
+        );
+        assert_eq!(e.uuid.as_deref(), Some("u1"));
+        assert_eq!(e.parent.as_deref(), Some("p"));
+    }
+
+    #[test]
+    fn queued_command_without_notification_stays_link() {
+        let e = parse_line(r#"{"type":"attachment","uuid":"u","attachment":{"type":"queued_command","prompt":"hello"}}"#).unwrap();
+        assert_eq!(e.kind, Kind::Link);
+    }
+
+    #[test]
+    fn reads_background_task_id_from_tool_use_result() {
+        let l = r#"{"type":"user","uuid":"u2","toolUseResult":{"backgroundTaskId":"bqat3cqah"},"message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"Command running in background with ID: bqat3cqah."}]}}"#;
+        assert_eq!(
+            parse_line(l).unwrap().bg_task_id.as_deref(),
+            Some("bqat3cqah")
+        );
+    }
+
+    #[test]
+    fn quoted_notification_tag_mid_text_stays_user() {
+        let l = r#"{"type":"user","uuid":"u","message":{"content":"look at this: <task-notification><task-id>x</task-id></task-notification>"}}"#;
+        assert_eq!(parse_line(l).unwrap().kind, Kind::User);
+    }
+
+    #[test]
+    fn notification_also_found_in_user_text() {
+        let body = "<task-notification>\\n<task-id>t9</task-id>\\n<status>completed</status>\\n<summary>it&#39;s done</summary>\\n</task-notification>";
+        for content in [
+            format!(r#""{body}""#),
+            format!(r#"[{{"type":"text","text":"{body}"}}]"#),
+        ] {
+            let l = format!(
+                r#"{{"type":"user","uuid":"u","parentUuid":"p","message":{{"content":{content}}}}}"#
+            );
+            let e = parse_line(&l).unwrap();
+            let Kind::TaskNotice(n) = e.kind else {
+                panic!("not a notice")
+            };
+            assert_eq!(
+                (n.task_id.as_str(), n.status.as_str(), n.summary.as_str()),
+                ("t9", "completed", "it's done")
+            );
+            assert_eq!(n.tool_use_id, None);
+        }
+    }
+
+    #[test]
+    fn parses_inventory_attachments() {
+        let mk = |att: &str| {
+            let l = format!(
+                r#"{{"type":"attachment","uuid":"u","parentUuid":"p","attachment":{att}}}"#
+            );
+            parse_line(&l).unwrap()
+        };
+        let Kind::Inventory(d) = mk(r#"{"type":"skill_listing","content":"- agent-browser: Browser x: y\n- foo:bar: d\nnoise\n- bare"}"#).kind else {
+            panic!()
+        };
+        assert_eq!(d.skills, ["agent-browser", "foo:bar", "bare"]);
+        let e = mk(
+            r#"{"type":"mcp_instructions_delta","addedNames":["cde","claude.ai Claude Docs"],"removedNames":["old"]}"#,
+        );
+        assert_eq!(e.parent.as_deref(), Some("p"));
+        let Kind::Inventory(d) = e.kind else { panic!() };
+        assert_eq!(d.mcp, ["cde", "claude.ai Claude Docs"]);
+        assert_eq!(d.removed.unwrap().mcp, ["old"]);
+        let Kind::Inventory(d) =
+            mk(r#"{"type":"agent_listing_delta","addedTypes":["Explore"]}"#).kind
+        else {
+            panic!()
+        };
+        assert_eq!(d.agents, ["Explore"]);
+        let Kind::Inventory(d) =
+            mk(r#"{"type":"deferred_tools_delta","addedNames":["mcp__a__b"]}"#).kind
+        else {
+            panic!()
+        };
+        assert_eq!(d.deferred_tools, ["mcp__a__b"]);
+        // malformed field types do not panic
+        assert!(matches!(
+            mk(r#"{"type":"agent_listing_delta","addedTypes":5}"#).kind,
+            Kind::Inventory(_)
+        ));
     }
 }

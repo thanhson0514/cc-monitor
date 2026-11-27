@@ -1,7 +1,8 @@
 // No console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! ccmon GUI: Tauri shell around the `cc_monitor` core. Read-only.
+//! ccmon GUI: Tauri shell around the `cc_monitor` core. Read-only, except for
+//! sessions the user runs from the composer (`cmd_control`).
 //!
 //! A background worker (core `discovery::Worker`) tails transcripts; a pump thread
 //! applies its messages to the shared `Store` and emits `store-changed` to the
@@ -9,7 +10,11 @@
 
 mod assets;
 mod changes;
+mod cmd_agents;
+mod cmd_catalog;
+mod cmd_control;
 
+use cc_monitor::bgtask::{BgKind, BgState, BgTask};
 use cc_monitor::config::{self, SharedConfig};
 use cc_monitor::discovery::{self, Key, Msg, Pinned, ScanOpts};
 use cc_monitor::metrics;
@@ -18,7 +23,7 @@ use cc_monitor::thread::{Item, ThreadLink, ToolState};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -34,6 +39,8 @@ struct Shared {
     pinned: Pinned,
     root: PathBuf,
     config: SharedConfig,
+    /// Managed `claude` sessions started from the composer.
+    manager: cmd_control::SharedManager,
 }
 
 const INPUT_STR_MAX: usize = 20_000;
@@ -156,6 +163,56 @@ impl From<&TreeRow> for TreeRowDto {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct BgTaskDto {
+    id: String,
+    kind: &'static str,
+    label: String,
+    state: &'static str,
+    started: Option<i64>,
+    ended: Option<i64>,
+    summary: Option<String>,
+    output_file: Option<String>,
+}
+
+impl BgTaskDto {
+    /// `open` = the owning session is live or recently written. A `Running` task of a
+    /// session that is not open is reported as `unknown` (finalization is not timer-driven).
+    fn from_task(t: &BgTask, open: bool) -> Self {
+        Self {
+            id: t.id.clone(),
+            kind: match t.kind {
+                BgKind::Shell => "shell",
+                BgKind::Monitor => "monitor",
+                BgKind::Agent => "agent",
+                BgKind::Workflow => "workflow",
+            },
+            label: t.label.clone(),
+            state: match t.state {
+                BgState::Running if open => "running",
+                BgState::Running | BgState::Unknown => "unknown",
+                BgState::Completed => "completed",
+                BgState::Failed => "failed",
+                BgState::Killed => "killed",
+            },
+            started: t.started,
+            ended: t.ended,
+            summary: t.summary.clone(),
+            output_file: t.output_file.clone(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TailDto {
+    text: String,
+    truncated: bool,
+    gone: bool,
+    size: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct LinkDto {
     kind: &'static str,
     key: Option<String>,
@@ -207,6 +264,9 @@ enum ItemDto {
         result_preview: String,
         has_more: bool,
         link: Option<LinkDto>,
+        bg: Option<BgTaskDto>,
+        waits: Vec<BgTaskDto>,
+        woke_by: Option<String>,
     },
     Compact {
         idx: usize,
@@ -237,7 +297,12 @@ struct ThreadDto {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct StatusDto {
+    /// Model label of the selected node (subagent's own, else the session's).
     model: Option<String>,
+    /// Raw model id behind `model`.
+    model_id: Option<String>,
+    /// `model` / `effort` come from the selected subagent thread.
+    node_sub: bool,
     ctx: Option<u64>,
     win: Option<u64>,
     win_estimated: bool,
@@ -374,6 +439,13 @@ fn get_thread(state: State<Shared>, key: String, tail: Option<usize>) -> Option<
                     }
                 });
                 let (result_preview, has_more) = clip(&t.result, PREVIEW);
+                let open = store.session_is_open(&sid, now);
+                let bg = t.bg.as_ref().map(|b| BgTaskDto::from_task(b, open));
+                let waits = t
+                    .waits
+                    .iter()
+                    .map(|b| BgTaskDto::from_task(b, open))
+                    .collect();
                 ItemDto::Tool {
                     idx,
                     prompt: t
@@ -403,6 +475,9 @@ fn get_thread(state: State<Shared>, key: String, tail: Option<usize>) -> Option<
                     result_preview,
                     has_more: has_more || t.persisted.is_some(),
                     link,
+                    bg,
+                    waits,
+                    woke_by: t.woke_by,
                 }
             }
         });
@@ -451,10 +526,8 @@ fn get_status(state: State<Shared>, key: Option<String>) -> StatusDto {
     let store = state.store.lock().unwrap();
     let now = discovery::now_ms();
     let mem = cc_monitor::platform::memory();
-    let sid = key
-        .as_deref()
-        .and_then(parse_key)
-        .map(|id| id.session().to_string());
+    let node = key.as_deref().and_then(parse_key);
+    let sid = node.as_ref().map(|id| id.session().to_string());
     let m = sid
         .as_ref()
         .and_then(|sid| {
@@ -466,8 +539,19 @@ fn get_status(state: State<Shared>, key: Option<String>) -> StatusDto {
             mem,
             ..Default::default()
         });
+    let main_id = sid
+        .as_ref()
+        .and_then(|sid| store.thread(&NodeId::Main(sid.clone())))
+        .and_then(|t| t.model());
+    let sub = node
+        .as_ref()
+        .filter(|id| matches!(id, NodeId::Agent(..)))
+        .and_then(|id| store.thread(id));
+    let nm = metrics::node_model(&m, main_id, sub);
     StatusDto {
-        model: m.model,
+        model: nm.model,
+        model_id: nm.model_id,
+        node_sub: nm.sub,
         ctx: m.ctx,
         win: m.win.map(|w| w.0),
         win_estimated: m.win.is_some_and(|w| w.1),
@@ -475,7 +559,7 @@ fn get_status(state: State<Shared>, key: Option<String>) -> StatusDto {
         branch: m.branch,
         lines: m.lines,
         mem: m.mem,
-        effort: m.effort,
+        effort: nm.effort,
         five_h: m.five_h,
         seven_d: m.seven_d,
         compactions: m.compactions,
@@ -667,6 +751,27 @@ fn get_diff(
     ))
 }
 
+/// Last bytes of a background task's output file. Only `*/tasks/*.output` under the
+/// temp dir or `/tmp/claude-*` are read (see `cc_monitor::tasktail`); anything else is `gone`.
+/// Async + `spawn_blocking`: file I/O never runs on the main thread.
+#[tauri::command]
+async fn tail_task_output(path: String, max: Option<u64>) -> Result<TailDto, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let t = cc_monitor::tasktail::tail_task_output(
+            Path::new(&path),
+            max.unwrap_or(cc_monitor::tasktail::TAIL_MAX),
+        );
+        TailDto {
+            text: t.text,
+            truncated: t.truncated,
+            gone: t.gone,
+            size: t.size,
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn preview_file(path: String) -> assets::Preview {
     assets::preview(&path)
@@ -780,6 +885,23 @@ fn main() {
     });
 
     let pump_store = store.clone();
+    // The change callback runs on reader threads: it only emits, never locks the Manager.
+    let app_handle: Arc<std::sync::OnceLock<tauri::AppHandle>> = Arc::default();
+    let cb_handle = app_handle.clone();
+    let manager: cmd_control::SharedManager = Arc::new(Mutex::new(
+        cc_monitor::control::runner::Manager::new(Box::new(move |sid, st| {
+            if let Some(h) = cb_handle.get() {
+                let _ = h.emit(
+                    "control-changed",
+                    cmd_control::ControlChanged {
+                        sid: sid.to_string(),
+                        run_state: st.clone(),
+                    },
+                );
+            }
+        })),
+    ));
+    let exit_manager = manager.clone();
     tauri::Builder::default()
         .manage(Shared {
             store,
@@ -787,9 +909,11 @@ fn main() {
             pinned,
             root: discovery::projects_root(),
             config: shared_config,
+            manager,
         })
         .setup(move |app| {
             let handle = app.handle().clone();
+            let _ = app_handle.set(handle.clone());
             std::thread::spawn(move || {
                 let mut keys = BTreeSet::new();
                 let mut tree = false;
@@ -845,8 +969,31 @@ fn main() {
             save_setup,
             remove_statusline,
             get_diff,
-            preview_file
+            preview_file,
+            tail_task_output,
+            cmd_agents::list_agents,
+            cmd_agents::list_workflows,
+            cmd_agents::agent_tools,
+            cmd_agents::session_project,
+            cmd_agents::agent_history,
+            cmd_agents::workflow_history,
+            cmd_agents::set_agent_disabled,
+            cmd_agents::set_workflow_disabled,
+            cmd_agents::save_agent,
+            cmd_catalog::get_catalog,
+            cmd_catalog::get_session_usage,
+            cmd_control::get_control,
+            cmd_control::set_overlay,
+            cmd_control::send_prompt,
+            cmd_control::interrupt,
+            cmd_control::stop_managed,
+            cmd_control::list_projects
         ])
-        .run(tauri::generate_context!())
-        .expect("không khởi động được ccmon GUI");
+        .build(tauri::generate_context!())
+        .expect("không khởi động được ccmon GUI")
+        .run(move |_, ev| {
+            if let tauri::RunEvent::Exit = ev {
+                cmd_control::stop_all(&exit_manager);
+            }
+        });
 }
