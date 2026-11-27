@@ -108,7 +108,7 @@
   - `pub fn pause_msg(c: &SubagentCall, ch: Channel) -> String`, `resume_msg(c) -> String`, `swap_msg(c, new_type: &str) -> String`, `cancel_msg(c, ch) -> String`. Exact copy:
     - pause, Managed: `[ccmon] I paused subagent {agent_type} ({agent_id}). Do not relaunch it or act on its result; wait for my next instruction.`
     - pause, Terminal: `[ccmon] Stop subagent {agent_type} now with TaskStop (task_id: {agent_id}). This is a pause: do not relaunch it or act on its result; wait for my next instruction.`
-    - resume: `[ccmon] Resume the paused subagent {agent_type}: use SendMessage to {agent_id} and tell it to continue where it stopped.`
+    - resume (signature `resume_msg(c, transcript: &str)`; a stopped agent cannot be resumed by SendMessage — spike fact (e) — so it relaunches the same type with a pointer to the old transcript): `[ccmon] Continue the paused subagent {agent_type} ({agent_id}). A stopped agent cannot be resumed, so start a new Agent call: subagent_type "{agent_type}", description "{description}", run_in_background: {background}, with exactly the original prompt below followed by this line: "A previous attempt at this task was stopped. Its transcript is {transcript} — read it first and continue from where it stopped instead of starting over."\n<prompt>\n{prompt}\n</prompt>\nWhen it finishes, treat its result as the result of the original task.`
     - swap: `[ccmon] Replace the paused subagent {agent_type} ({agent_id}) with a new Agent call: subagent_type "{new}", description "{description}", run_in_background: {background}, and exactly this prompt, verbatim:\n<prompt>\n{prompt}\n</prompt>\nWhen it finishes, treat its result as the result of the original task.`
     - cancel, Managed: `[ccmon] I cancelled subagent {agent_type} ({agent_id}). Treat that task as failed: handle it and tell me what you will do next.`
     - cancel, Terminal: `[ccmon] Stop subagent {agent_type} now with TaskStop (task_id: {agent_id}). I am cancelling it: treat that task as failed, handle it and tell me what you will do next.`
@@ -137,8 +137,8 @@
   - `#[tauri::command] get_subagent(key: String) -> Result<Option<SubagentDto>, String>` with `SubagentDto { call: SubagentCall, status: String /* running|done|error */, paused: bool, channel: Option<&'static str>, reason: Option<&'static str> }` — `None` when `find_call` fails (nested/workflow agent).
   - `#[tauri::command] subagent_action(key: String, action: String, agent: Option<String>) -> Result<(), String>`; actions:
     - `"pause"`: refuse unless status `running`; managed → `stop_task` then `send_queued(pause_msg(Managed))`; tmux → `send_text(pause_msg(Terminal))`; add `Paused` marker.
-    - `"resume"`: requires marker; send `resume_msg`; remove marker.
-    - `"swap"`: requires marker and `agent` (valid agent name via `cmd_agents::valid_agent_name` or a catalog id); send `swap_msg`; remove marker. Apply Task 1 (d) outcome for new agents on managed sessions.
+    - `"resume"`: requires marker; send `resume_msg(call, transcript)` where `transcript` is the stopped agent's file `~/.claude/projects/<proj>/<sid>/subagents/agent-<agentId>.jsonl` (take the path the store already tracks for that agent node); remove marker.
+    - `"swap"`: requires marker and `agent` (valid agent name via `cmd_agents::valid_agent_name` or a catalog id); send `swap_msg`; remove marker. Task 1 (d): a `-p` child does NOT load a newly created agent file — if `agent` is not in the agent list the running child was launched with (catalog snapshot at launch is not tracked, so: if the agent file mtime is newer than the child start) and the managed session is Idle, stop the child first so the next send relaunches with `--resume`; if Busy, return Err `Session đang bận — chờ lượt hiện tại xong rồi đổi sang agent mới`. tmux sessions pick up new agents live.
     - `"cancel"`: running → stop as in pause with `cancel_msg`; paused → send `cancel_msg(Managed)` (agent already stopped) and remove marker.
     - Managed send uses `Manager::send_queued` if the session is managed, else `Manager::send` (resumes a non-live session as today).
   - `api.ts`: `channel`, new `reason` values, `SubagentCall`, `SubagentDto`, `api.subagent(key)`, `api.subagentAction(key, action, agent?)`.
@@ -181,7 +181,7 @@
   - paused: badge `tạm dừng`, buttons `Tiếp tục`, `Đổi agent`, `Hủy`.
   - done/error: nothing.
   - `Hủy` asks confirm: `Hủy subagent này? Main thread sẽ coi nó là thất bại.`
-- [ ] **Step 2:** `Đổi agent` opens a picker: agents from `listAgents` excluding disabled and the current `agentType`, filter box, plus `+ Agent mới` opening `AgentForm`; after save the new name is preselected. Hide `+ Agent mới` when Task 1 found tmux sessions don't reload agents and `channel === 'tmux'`. Confirm button `Chạy lại bằng <name>`.
+- [ ] **Step 2:** `Đổi agent` opens a picker: agents from `listAgents` excluding disabled and the current `agentType`, filter box, plus `+ Agent mới` opening `AgentForm`; after save the new name is preselected. Confirm button `Chạy lại bằng <name>`.
 - [ ] **Step 3:** Mount `<SubagentControl agentKey={link.key} compact />` in `AgentCard` head (when `link.kind === 'agent' && link.key`), and full-size in the App thread header for agent threads.
 - [ ] **Step 4:** `yarn build` → PASS. Manual: in a managed session start a background subagent, press Dừng → badge `tạm dừng` and a `[ccmon]` prompt appears in main; Đổi agent → main relaunches with the chosen type.
 - [ ] **Step 5:** Commit `feat(ui): pause, resume, swap and cancel subagents`.
