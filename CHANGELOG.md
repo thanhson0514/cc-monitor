@@ -35,6 +35,10 @@ The section for the version in `Cargo.toml` becomes the GitHub release notes
 - **Focus files in chat.** Each file in Quản lý → File has a ⌖ button that jumps
   to the chat tool calls that read or edited it, cycling between them.
 
+### Fixed
+
+- An image the agent reads (for example a screenshot) no longer shows "ảnh không còn" for good when the Read appears before the file is written. ccmon now keeps looking for the file for over a minute and reloads it once the tool finishes, and a half-written image is retried instead of staying broken.
+
 ## [0.3.1] - 2026-11-27
 
 ### Added
