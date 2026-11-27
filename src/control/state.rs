@@ -96,6 +96,42 @@ pub fn save_registry_in(dir: &Path, r: &Registry) -> io::Result<()> {
     write_atomic(&dir.join("registry.json"), r)
 }
 
+/// A subagent the user paused, kept so it can be continued or swapped.
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Debug)]
+pub struct Paused {
+    pub call: super::subagent::SubagentCall,
+    pub at: i64,
+}
+
+pub fn load_paused(sid: &str) -> Vec<Paused> {
+    load_paused_in(&state_dir(), sid)
+}
+pub fn save_paused(sid: &str, p: &[Paused]) -> io::Result<()> {
+    save_paused_in(&state_dir(), sid, p)
+}
+pub fn load_paused_in(dir: &Path, sid: &str) -> Vec<Paused> {
+    if !valid_sid(sid) {
+        return Vec::new();
+    }
+    read_json(&dir.join("paused").join(format!("{sid}.json"))).unwrap_or_default()
+}
+pub fn save_paused_in(dir: &Path, sid: &str, p: &[Paused]) -> io::Result<()> {
+    if !valid_sid(sid) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid session id",
+        ));
+    }
+    let path = dir.join("paused").join(format!("{sid}.json"));
+    if p.is_empty() {
+        return match std::fs::remove_file(&path) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        };
+    }
+    write_atomic(&path, &p)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,5 +249,30 @@ mod tests {
         let e2 = effective(&o, &r2);
         assert!(!e2.workflows_off);
         assert_eq!(e2.disabled_workflows, ["w".to_string()].into());
+    }
+
+    #[test]
+    fn paused_roundtrip() {
+        use super::super::subagent::SubagentCall;
+        let d = tmp("paused");
+        let mk = |id: &str| Paused {
+            call: SubagentCall {
+                agent_id: id.into(),
+                tool_use_id: "t".into(),
+                agent_type: "Explore".into(),
+                description: "d".into(),
+                prompt: "p".into(),
+                background: false,
+            },
+            at: 5,
+        };
+        let v = vec![mk("a1"), mk("a2")];
+        save_paused_in(&d, "s-1", &v).unwrap();
+        assert_eq!(load_paused_in(&d, "s-1"), v);
+        save_paused_in(&d, "s-1", &[]).unwrap();
+        assert!(!d.join("paused/s-1.json").exists());
+        assert!(load_paused_in(&d, "s-1").is_empty());
+        assert!(load_paused_in(&d, "../x").is_empty());
+        assert!(save_paused_in(&d, "../x", &v).is_err());
     }
 }

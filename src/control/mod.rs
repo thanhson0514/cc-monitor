@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 pub mod draft;
 pub mod runner;
 pub mod state;
+pub mod subagent;
 pub mod tmux;
 
 /// Per-session launch overlay. Ids: skills = catalog skill id (`name` or
