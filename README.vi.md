@@ -107,8 +107,10 @@ cài trên máy (`PATH`, `~/.local/bin` hoặc `~/.claude/local`) dưới dạng
   MCP server, agent, workflow chỉ cho session đó, qua cờ `--disallowedTools` / `--settings` lúc khởi
   chạy. `settings.json` của bạn không bị sửa; trạng thái riêng của ccmon nằm ở `~/.config/ccmon/` (Windows: `%APPDATA%\ccmon\`)
   (`overlays/<session>.json`, `defaults.json`, `registry.json`).
-- **Session ở terminal chỉ xem:** session đang mở ở terminal không bao giờ bị tiếp quản; ô soạn bị khoá
-  (“Session đang chạy ở terminal — chỉ xem”).
+- **Session ở terminal (tmux):** session mở ở terminal không bao giờ bị tiếp quản, nhưng nếu chạy trong tmux
+  bạn có thể gõ vào đó từ ccmon (prompt, `/model`, `/effort`, Dừng = Esc). Ngoài tmux, hoặc bị treo bằng
+  Ctrl+Z, ô soạn bị khoá kèm lý do.
+- **Điều khiển subagent:** Dừng, Tiếp tục, Đổi agent hoặc Hủy subagent từ header hay thẻ của nó.
 - **Nhắc `@agent`:** gõ `@` trong ô soạn để chọn agent; tham chiếu được tô sáng và liệt kê dưới prompt.
 
 ### Trung tâm điều khiển: Thư viện và Agents
@@ -120,7 +122,7 @@ cài trên máy (`PATH`, `~/.local/bin` hoặc `~/.claude/local`) dưới dạng
   ở mọi session chạy từ ccmon, file và lịch sử vẫn giữ nguyên.
 - **Giới hạn, nói thẳng:** skill và agent bị tắt sẽ bị chặn khi gọi, nhưng Claude Code vẫn liệt kê
   chúng cho model; ở session chạy từ ccmon, tool cần duyệt bị từ chối (chế độ `-p` không có hộp thoại
-  duyệt); session đang mở ở terminal chỉ xem.
+  duyệt); session đang mở ở terminal chỉ điều khiển được khi chạy trong tmux.
 
 ## Build từ mã nguồn
 

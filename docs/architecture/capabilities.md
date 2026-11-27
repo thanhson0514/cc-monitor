@@ -84,8 +84,17 @@ and tail reads, filtered by `since_days`; it is returned regardless of registry 
   through `--settings <state_dir>/launch/<sid|new-millis>.settings.json`.
 - `runner.rs`: `ManagedSession` is one long-lived `claude -p` child; `Manager` holds them by sid.
   A changed overlay restarts the child between turns (`--resume`); during a turn it is `Err(Busy)`.
-  A session live in another terminal (`discovery::read_live`, pid not ours) is `SessionLiveElsewhere`:
-  view only, no takeover.
+  `stop_task(sid, task_id)` and `send_queued(sid, text)` forward to the child (stop a background/subagent
+  task, queue a message). A session live in another terminal (`discovery::read_live`, pid not ours) is
+  `SessionLiveElsewhere`: ccmon never takes it over, but if it runs in tmux it can be driven by paste
+  through `control::tmux`; otherwise it is view only.
+- `tmux.rs` (`control::tmux`): the terminal channel. `check` finds the tmux pane of the live pid and
+  refuses (with a user-facing reason) when there is no pane or the process is suspended (Ctrl+Z). Prompts
+  are pasted into the pane, `/model` and `/effort` are sent for chips, and interrupt sends Esc.
+- `subagent.rs` (`control::subagent`): subagent control. Pause, resume, swap and cancel are turned into
+  steps (stop the task, send a follow-up to main). Resume relaunches the same agent against the stopped
+  transcript, since Claude Code cannot resume a stopped subagent. Paused state is a marker
+  `paused/<sid>.json` in the ccmon state dir (`state::{load,save}_paused`).
 - **Lock-free start of a new session:** `Manager::start_new(&self, ...)` spawns and sends the first
   message; then, with the Manager lock released, `ManagedSession::wait_session_id(timeout)`; then
   `Manager::adopt(sid, session, overlay)`. Avoid `Manager::send(None, ...)` under a shared lock
@@ -97,7 +106,7 @@ and tail reads, filtered by `since_days`; it is returned regardless of registry 
 ### ccmon state conventions (`src/control/state.rs`)
 
 - Location: `state_dir()` = parent of `config::config_path()` (`~/.config/ccmon/`). Files:
-  `overlays/<sid>.json`, `defaults.json` (overlay for new sessions), `registry.json`, `launch/*.settings.json`.
+  `overlays/<sid>.json`, `defaults.json` (overlay for new sessions), `registry.json`, `paused/<sid>.json`, `launch/*.settings.json`.
 - All writes go through `write_atomic` (temp file in the same dir, then rename). Reads are tolerant:
   missing or corrupt files fall back to defaults. `valid_sid` (`[A-Za-z0-9-]`) guards every path built from a sid.
 - ccmon writes only its own state, plus user agent/workflow files the user explicitly saves from the
