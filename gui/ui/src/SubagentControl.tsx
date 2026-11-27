@@ -113,7 +113,7 @@ function SwapPicker({
     );
 }
 
-export function SubagentControl({ agentKey, compact }: { agentKey: string; compact?: boolean }) {
+export function SubagentControl({ agentKey, compact, quietWhenDone }: { agentKey: string; compact?: boolean; quietWhenDone?: boolean }) {
     const [dto, setDto] = useState<SubagentDto | null>(null);
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState<string | null>(null);
@@ -125,9 +125,16 @@ export function SubagentControl({ agentKey, compact }: { agentKey: string; compa
     }, [agentKey]);
     useEffect(() => {
         let live = true;
+        let settled = false;
         const fetchDto = () => {
+            if (settled) return;
             api.subagent(agentKey)
-                .then((d) => live && setDto(d))
+                .then((d) => {
+                    if (!live) return;
+                    // A finished, unpaused card stays finished: stop refetching.
+                    if (quietWhenDone && (!d || (d.status !== 'running' && d.status !== 'idle' && !d.paused))) settled = true;
+                    setDto(d);
+                })
                 .catch(() => live && setDto(null));
         };
         setDto(null);
@@ -137,7 +144,7 @@ export function SubagentControl({ agentKey, compact }: { agentKey: string; compa
             live = false;
             un.then((f) => f());
         };
-    }, [agentKey]);
+    }, [agentKey, quietWhenDone]);
 
     const run = (action: SubagentAction, agent?: string) => {
         setBusy(true);
