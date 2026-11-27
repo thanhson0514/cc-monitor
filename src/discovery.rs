@@ -97,6 +97,8 @@ pub enum Msg {
         agent_id: String,
         meta: AgentMeta,
         run_id: Option<String>,
+        /// Agent transcript file.
+        path: PathBuf,
     },
     Events {
         key: Key,
@@ -491,6 +493,7 @@ impl Worker {
                                 ..Default::default()
                             },
                             run_id: None,
+                            path: p.clone(),
                         })?;
                         self.files.insert(key, Tracked::codex(p.clone()));
                     }
@@ -556,6 +559,7 @@ impl Worker {
                 agent_id: agent_id.to_string(),
                 meta,
                 run_id: run_id.clone(),
+                path: e.path(),
             })?;
             self.files.insert(key, Tracked::claude(e.path()));
         }

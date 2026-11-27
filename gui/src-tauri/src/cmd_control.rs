@@ -8,6 +8,7 @@
 
 use cc_monitor::control::runner::{ControlError, Manager as CtlManager, RunState};
 use cc_monitor::control::state::{self, effective};
+use cc_monitor::control::tmux::{self, Block, Pane};
 use cc_monitor::control::{find_claude, Overlay, Registry};
 use cc_monitor::discovery::{self, LiveInfo, Pinned};
 use cc_monitor::metrics::model_label;
@@ -36,7 +37,11 @@ pub struct ControlDto {
     /// `None` = not run by ccmon (yet).
     pub run_state: Option<RunState>,
     pub can_control: bool,
-    /// "liveElsewhere" | "claudeNotFound"
+    /// How ccmon reaches the session: "managed" (its own `-p` child, started
+    /// or resumed on send) | "tmux" (terminal pane); `None` = not controllable.
+    pub channel: Option<&'static str>,
+    /// "liveElsewhere" | "claudeNotFound" | "notInTmux" | "paneGone" |
+    /// "notForeground" | "unsupported"
     pub reason: Option<&'static str>,
     pub models: Vec<String>,
     /// Display label per `models` entry (status-bar formatting: `Opus 5.5`).
@@ -70,6 +75,32 @@ pub struct DtoInputs<'a> {
     pub live: Option<&'a LiveInfo>,
     pub claude_found: bool,
     pub seen_models: Vec<String>,
+    /// `tmux::check` of the live entry, only when it is live and not ours.
+    pub tmux: Option<Result<Pane, Block>>,
+}
+
+/// `tmux::Block` as its serde (camelCase) name.
+pub fn block_reason(b: Block) -> &'static str {
+    match b {
+        Block::NotInTmux => "notInTmux",
+        Block::PaneGone => "paneGone",
+        Block::NotForeground => "notForeground",
+        Block::Unsupported => "unsupported",
+    }
+}
+
+/// User-facing text for a `ControlDto::reason` code.
+pub fn reason_text(code: &str) -> String {
+    match code {
+        "notInTmux" => "Session đang chạy ở terminal ngoài tmux — chỉ xem".into(),
+        "paneGone" => "Không tìm thấy pane tmux của session — chỉ xem".into(),
+        "notForeground" => {
+            "claude không ở foreground trong pane tmux (đang chạy lệnh khác?) — chỉ xem".into()
+        }
+        "unsupported" => "Không điều khiển được terminal trên hệ thống này — chỉ xem".into(),
+        "claudeNotFound" => err_text(&ControlError::ClaudeNotFound),
+        _ => err_text(&ControlError::SessionLiveElsewhere),
+    }
 }
 
 pub fn control_dto(i: DtoInputs) -> ControlDto {
@@ -80,12 +111,16 @@ pub fn control_dto(i: DtoInputs) -> ControlDto {
     // Our own running child is never "elsewhere", whatever pid the registry
     // shows (wrapper launchers such as claude.cmd).
     let elsewhere = !alive && i.live.is_some_and(|l| i.own_pid != Some(l.pid));
-    let reason = if elsewhere {
-        Some("liveElsewhere")
+    let (channel, reason) = if elsewhere {
+        match i.tmux {
+            Some(Ok(_)) => (Some("tmux"), None),
+            Some(Err(b)) => (None, Some(block_reason(b))),
+            None => (None, Some("liveElsewhere")),
+        }
     } else if !i.claude_found {
-        Some("claudeNotFound")
+        (None, Some("claudeNotFound"))
     } else {
-        None
+        (Some("managed"), None)
     };
     let pending = alive
         && i.launched
@@ -97,6 +132,7 @@ pub fn control_dto(i: DtoInputs) -> ControlDto {
         overlay: i.overlay,
         run_state: i.run_state,
         can_control: reason.is_none(),
+        channel,
         reason,
         efforts: EFFORTS.map(String::from).to_vec(),
         pending,
@@ -195,7 +231,7 @@ pub fn transcript_cwd(p: &Path) -> Option<String> {
         .find_map(|v| v.get("cwd")?.as_str().map(String::from))
 }
 
-fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
@@ -272,16 +308,26 @@ fn session_cwd(store: &Mutex<Store>, sid: &str) -> Option<String> {
     lock(store).sessions.get(sid)?.main.cwd().map(String::from)
 }
 
+/// How ccmon reaches a session right now.
+pub(crate) enum Route {
+    /// ccmon's own running `-p` child.
+    Managed,
+    /// Not live anywhere: `Manager::send` resumes it.
+    Resume,
+    /// Live in a terminal whose tmux pane passed `tmux::check`.
+    Tmux(Pane),
+}
+
 #[derive(Clone)]
-struct Ctx {
-    store: Arc<Mutex<Store>>,
-    manager: SharedManager,
-    root: PathBuf,
+pub(crate) struct Ctx {
+    pub(crate) store: Arc<Mutex<Store>>,
+    pub(crate) manager: SharedManager,
+    pub(crate) root: PathBuf,
     pinned: Pinned,
 }
 
 impl Ctx {
-    fn of(s: &Shared) -> Self {
+    pub(crate) fn of(s: &Shared) -> Self {
         Self {
             store: s.store.clone(),
             manager: s.manager.clone(),
@@ -290,8 +336,52 @@ impl Ctx {
         }
     }
 
-    fn live(&self) -> HashMap<String, LiveInfo> {
+    pub(crate) fn live(&self) -> HashMap<String, LiveInfo> {
         discovery::read_live(&sessions_dir(&self.root))
+    }
+
+    /// Live entry of `sid` that is not ccmon's own child.
+    fn elsewhere(&self, sid: &str) -> Option<LiveInfo> {
+        let l = self.live().remove(sid)?;
+        (!lock(&self.manager).owns_live(sid, l.pid)).then_some(l)
+    }
+
+    /// Which channel reaches `sid`; `Err` is a `ControlDto::reason` code.
+    /// The tmux check runs here, so call it right before sending.
+    pub(crate) fn route(&self, sid: &str) -> Result<Route, &'static str> {
+        if let Some(l) = self.elsewhere(sid) {
+            return tmux::check(&l).map(Route::Tmux).map_err(block_reason);
+        }
+        let alive = lock(&self.manager)
+            .state(sid)
+            .is_some_and(|s| !matches!(s, RunState::Exited { .. }));
+        if alive {
+            Ok(Route::Managed)
+        } else if find_claude().is_none() {
+            Err("claudeNotFound")
+        } else {
+            Ok(Route::Resume)
+        }
+    }
+
+    /// `Manager::send` with the session's stored cwd and effective overlay
+    /// (starts or resumes the `-p` child as needed).
+    pub(crate) fn send_resume(&self, sid: &str, text: &str) -> Result<String, String> {
+        let cwd = session_cwd(&self.store, sid)
+            .ok_or_else(|| "Không rõ thư mục làm việc của session".to_string())?;
+        let eff = effective(&state::load_overlay(sid), &state::load_registry());
+        let live = self.live();
+        lock(&self.manager)
+            .send(Some(sid), Path::new(&cwd), text, &eff, &live)
+            .map_err(|e| err_text(&e))
+    }
+
+    fn interrupt(&self, sid: &str) -> Result<(), String> {
+        if let Some(l) = self.elsewhere(sid) {
+            let p = tmux::check(&l).map_err(|b| reason_text(block_reason(b)))?;
+            return tmux::send_escape(&p).map_err(|e| format!("Lỗi tmux: {e}"));
+        }
+        lock(&self.manager).interrupt(sid).map_err(|e| err_text(&e))
     }
 
     fn dto(&self, sid: Option<&str>) -> ControlDto {
@@ -300,12 +390,15 @@ impl Ctx {
             .unwrap_or_else(state::load_defaults);
         let registry = state::load_registry();
         let live = self.live();
-        let (run_state, launched, own_pid) = match sid {
+        let (run_state, launched, own_pid, tmux) = match sid {
             Some(s) => {
                 let m = lock(&self.manager);
-                (m.state(s), m.overlay(s).cloned(), m.pid(s))
+                let other = live.get(s).filter(|l| !m.owns_live(s, l.pid));
+                let r = (m.state(s), m.overlay(s).cloned(), m.pid(s));
+                drop(m);
+                (r.0, r.1, r.2, other.map(tmux::check))
             }
-            None => (None, None, None),
+            None => (None, None, None, None),
         };
         control_dto(DtoInputs {
             overlay,
@@ -316,6 +409,7 @@ impl Ctx {
             live: sid.and_then(|s| live.get(s)),
             claude_found: find_claude().is_some(),
             seen_models: seen_models(&self.store),
+            tmux,
         })
     }
 
@@ -331,6 +425,12 @@ impl Ctx {
         }
         let registry = state::load_registry();
         if let Some(sid) = sid {
+            // Live in a terminal: type into its tmux pane, checked right now.
+            if let Some(l) = self.elsewhere(&sid) {
+                let p = tmux::check(&l).map_err(|b| reason_text(block_reason(b)))?;
+                tmux::send_text(&p, &text).map_err(|e| format!("Lỗi tmux: {e}"))?;
+                return Ok(sid);
+            }
             // The working directory comes from the store. Only a session ccmon
             // itself runs but the store has not seen yet (just started) may use
             // the webview's cwd, and only a known project directory.
@@ -378,7 +478,9 @@ impl Ctx {
     }
 }
 
-async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Result<T, String> {
+pub(crate) async fn blocking<T: Send + 'static>(
+    f: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(f)
         .await
         .map_err(|e| e.to_string())
@@ -423,8 +525,8 @@ pub async fn send_prompt(
 
 #[tauri::command]
 pub async fn interrupt(state: State<'_, Shared>, sid: String) -> Result<(), String> {
-    let m = state.manager.clone();
-    blocking(move || lock(&m).interrupt(&sid).map_err(|e| err_text(&e))).await?
+    let c = Ctx::of(&state);
+    blocking(move || c.interrupt(&sid)).await?
 }
 
 #[tauri::command]
@@ -469,7 +571,77 @@ mod tests {
             live: None,
             claude_found: true,
             seen_models: vec![],
+            tmux: None,
         }
+    }
+
+    fn pane() -> Pane {
+        Pane {
+            id: "%4".into(),
+            in_mode: false,
+        }
+    }
+
+    #[test]
+    fn dto_tmux_channel() {
+        let reg = Registry::default();
+        let l = live(42);
+        let d = control_dto(DtoInputs {
+            live: Some(&l),
+            tmux: Some(Ok(pane())),
+            ..inputs(&reg)
+        });
+        assert!(d.can_control);
+        assert_eq!(d.channel, Some("tmux"));
+        assert_eq!(d.reason, None);
+        assert_eq!(serde_json::to_value(&d).unwrap()["channel"], "tmux");
+        // tmux needs no claude binary.
+        let d = control_dto(DtoInputs {
+            live: Some(&l),
+            tmux: Some(Ok(pane())),
+            claude_found: false,
+            ..inputs(&reg)
+        });
+        assert!(d.can_control && d.channel == Some("tmux"));
+    }
+
+    #[test]
+    fn dto_tmux_blocked() {
+        let reg = Registry::default();
+        let l = live(42);
+        for (b, r) in [
+            (Block::NotForeground, "notForeground"),
+            (Block::NotInTmux, "notInTmux"),
+            (Block::PaneGone, "paneGone"),
+            (Block::Unsupported, "unsupported"),
+        ] {
+            let d = control_dto(DtoInputs {
+                live: Some(&l),
+                tmux: Some(Err(b)),
+                ..inputs(&reg)
+            });
+            assert!(!d.can_control);
+            assert_eq!(d.reason, Some(r));
+            assert_eq!(d.channel, None);
+        }
+    }
+
+    #[test]
+    fn dto_managed_channel() {
+        let reg = Registry::default();
+        let d = control_dto(DtoInputs {
+            run_state: Some(RunState::Idle),
+            own_pid: Some(7),
+            ..inputs(&reg)
+        });
+        assert_eq!(d.channel, Some("managed"));
+        // Not live anywhere: the next send resumes it under ccmon.
+        assert_eq!(control_dto(inputs(&reg)).channel, Some("managed"));
+        let d = control_dto(DtoInputs {
+            claude_found: false,
+            ..inputs(&reg)
+        });
+        assert_eq!(d.channel, None);
     }
 
     #[test]

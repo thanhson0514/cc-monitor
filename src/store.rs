@@ -68,6 +68,8 @@ pub struct AgentState {
     pub meta: AgentMeta,
     pub run_id: Option<String>,
     pub mtime: i64,
+    /// Agent transcript file (`<sid>/subagents/agent-<id>.jsonl`).
+    pub path: PathBuf,
 }
 
 pub struct Session {
@@ -158,6 +160,7 @@ impl Store {
                 agent_id,
                 meta,
                 run_id,
+                path,
             } => {
                 if let Some(s) = self.sessions.get_mut(&sid) {
                     s.agents.entry(agent_id).or_insert(AgentState {
@@ -165,6 +168,7 @@ impl Store {
                         meta,
                         run_id,
                         mtime: 0,
+                        path,
                     });
                 }
             }
@@ -603,12 +607,14 @@ mod tests {
                 ..Default::default()
             },
             run_id: None,
+            path: "agent-x.jsonl".into(),
         });
         st.apply(Msg::Agent {
             sid: "s".into(),
             agent_id: "w1".into(),
             meta: AgentMeta::default(),
             run_id: Some("wf_1".into()),
+            path: "agent-w1.jsonl".into(),
         });
         st
     }

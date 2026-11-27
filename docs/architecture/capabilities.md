@@ -117,6 +117,12 @@ what a `Yield {}` is waiting on.
   `invalidate_catalog()` after ccmon changes a file or the registry), `listing`, `get_catalog`, `get_session_usage`.
   The session cwd comes from the store, never from the webview.
 - `cmd_control.rs`: `get_control`, `set_overlay`, `send_prompt`, `interrupt`, `stop_managed`, `list_projects`.
+  `Ctx::route(sid)` picks the channel: ccmon's own child (`managed`), not live (`Manager::send` resumes
+  it), or live in a terminal (`tmux::check` right before each send/Escape; a failed check is the `reason`).
+- `cmd_subagent.rs`: `get_subagent(key)`, `subagent_action(key, action, agent)` (pause/resume/swap/cancel).
+  Pure `plan_action` returns the steps; markers in `state::{load,save}_paused`. Swap targets come from the
+  session's agent listing (`cmd_agents::session_agents`); a user/project agent file newer than ccmon's
+  idle `-p` child stops it so the next send relaunches with `--resume`.
 - `cmd_agents.rs`: `list_agents/workflows`, `*_history`, `set_agent_disabled`, `set_workflow_disabled`, `save_agent`.
 - Every command is registered in `main.rs` (`generate_handler!`); mirror DTOs in `gui/ui/src/api.ts`.
 

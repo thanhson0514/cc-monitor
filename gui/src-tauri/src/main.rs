@@ -13,6 +13,7 @@ mod changes;
 mod cmd_agents;
 mod cmd_catalog;
 mod cmd_control;
+mod cmd_subagent;
 
 use cc_monitor::bgtask::{BgKind, BgState, BgTask};
 use cc_monitor::config::{self, SharedConfig};
@@ -1058,7 +1059,9 @@ fn main() {
             cmd_control::send_prompt,
             cmd_control::interrupt,
             cmd_control::stop_managed,
-            cmd_control::list_projects
+            cmd_control::list_projects,
+            cmd_subagent::get_subagent,
+            cmd_subagent::subagent_action
         ])
         .build(tauri::generate_context!())
         .expect("không khởi động được ccmon GUI")

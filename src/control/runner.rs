@@ -141,6 +141,8 @@ pub struct ManagedSession {
     stdin: Option<ChildStdin>,
     inner: Arc<Inner>,
     req_seq: u64,
+    /// When the child was spawned (it loads agent files only at start).
+    started: std::time::SystemTime,
 }
 
 impl ManagedSession {
@@ -203,6 +205,7 @@ impl ManagedSession {
             stdin,
             inner,
             req_seq: 0,
+            started: std::time::SystemTime::now(),
         })
     }
 
@@ -279,6 +282,11 @@ impl ManagedSession {
     }
 
     /// OS pid of the child (compare with `LiveInfo::pid`).
+    /// Spawn time of the child process.
+    pub fn started(&self) -> std::time::SystemTime {
+        self.started
+    }
+
     pub fn pid(&self) -> u32 {
         self.pid
     }
@@ -737,6 +745,11 @@ impl Manager {
 
     pub fn pid(&self, sid: &str) -> Option<u32> {
         self.sessions.get(sid).map(|e| e.s.pid())
+    }
+
+    /// Spawn time of the session's current process.
+    pub fn started(&self, sid: &str) -> Option<std::time::SystemTime> {
+        self.sessions.get(sid).map(|e| e.s.started())
     }
 
     /// Overlay the session's current process was launched with.

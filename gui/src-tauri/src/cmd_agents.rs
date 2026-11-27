@@ -335,7 +335,7 @@ fn too_big(c: &Capability) -> bool {
 }
 
 /// Claude Code's own agent types (no file on disk), for names known only from history.
-const BUILTIN_AGENTS: [&str; 6] = [
+pub(crate) const BUILTIN_AGENTS: [&str; 6] = [
     "general-purpose",
     "Explore",
     "Plan",
@@ -515,6 +515,21 @@ impl Ctx {
         }
         v.into_iter().filter(|t| valid_tool(t)).collect()
     }
+}
+
+/// The session's agent listing as `list_agents` builds it (catalog for the
+/// session's project plus announced-only items), without history-only names.
+pub(crate) fn session_agents(
+    store: Arc<Mutex<Store>>,
+    root: PathBuf,
+    sid: &str,
+) -> Vec<Capability> {
+    let c = Ctx { store, root };
+    let project = c.project(Some(sid), None).ok().flatten();
+    c.items(project.as_deref())
+        .into_iter()
+        .filter(|i| i.kind == CapKind::Agent)
+        .collect()
 }
 
 const BASE_TOOLS: [&str; 13] = [
