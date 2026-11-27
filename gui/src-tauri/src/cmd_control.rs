@@ -387,7 +387,9 @@ impl Ctx {
     fn interrupt(&self, sid: &str) -> Result<(), String> {
         if let Some(l) = self.elsewhere(sid) {
             let p = tmux::check(&l).map_err(|b| reason_text(block_reason(b)))?;
-            return tmux::send_escape(&p).map_err(|e| format!("Lỗi tmux: {e}"));
+            // Esc on an open permission dialog would deny it: refuse instead.
+            tmux::ensure_no_dialog(&p).map_err(|e| tmux::error_text(&e))?;
+            return tmux::send_escape(&p).map_err(|e| tmux::error_text(&e));
         }
         lock(&self.manager).interrupt(sid).map_err(|e| err_text(&e))
     }

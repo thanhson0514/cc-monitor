@@ -101,9 +101,10 @@ pub fn save_registry_in(dir: &Path, r: &Registry) -> io::Result<()> {
 pub struct Paused {
     pub call: super::subagent::SubagentCall,
     pub at: i64,
-    /// ccmon itself stopped the task (`stop_task` answered): the agent is
-    /// stopped even while its tree row still reads running. `false` when main
-    /// was only asked to stop it (terminal session).
+    /// ccmon itself sent `stop_task` to its own child (the request was written;
+    /// ccmon does not wait for the `control_response`). Treated as stopped even
+    /// while the tree row still reads running. `false` when main was only asked
+    /// to stop it (terminal session).
     #[serde(default)]
     pub stopped: bool,
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, CapKind, CapScope, Capability, ControlDto, toggleCap, Usage } from './api';
-import { capSwitch, LOCK_REASON } from './Composer';
+import { capSwitch, LOCK_REASON, TMUX_FIXED } from './Composer';
 
 const TABS: [CapKind, string][] = [
     ['skill', 'Skills'],
@@ -51,7 +51,7 @@ export function Library({ sid, sessionLabel }: { sid: string | null; sessionLabe
     }, [sid]);
 
     const toggle = (c: Capability) => {
-        if (!sid || !ctl) return;
+        if (!sid || !ctl || ctl.channel === 'tmux') return;
         const o = toggleCap(ctl.overlay, c.kind, c.id);
         setCtl({ ...ctl, overlay: o });
         // Writes go out one at a time in click order (last click wins); only the
@@ -62,9 +62,20 @@ export function Library({ sid, sessionLabel }: { sid: string | null; sessionLabe
             .then((d) => {
                 if (seq === writeSeq.current && sidRef.current === sid) setCtl(d);
             })
-            .catch((e) => sidRef.current === sid && setErr(String(e)));
+            .catch((e) => {
+                if (sidRef.current !== sid) return;
+                setErr(String(e));
+                // The write was refused: show the saved state again, not the optimistic one.
+                api.control(sid).then((d) => sidRef.current === sid && setCtl(d)).catch(() => {});
+            });
     };
-    const ctlLock = !sid ? TOGGLE_TIP : ctl && !ctl.canControl ? LOCK_REASON[ctl.reason ?? ''] ?? 'Chỉ xem' : null;
+    const ctlLock = !sid
+        ? TOGGLE_TIP
+        : ctl && !ctl.canControl
+          ? LOCK_REASON[ctl.reason ?? ''] ?? 'Chỉ xem'
+          : ctl?.channel === 'tmux'
+            ? `${TMUX_FIXED} (session đang chạy ở terminal)`
+            : null;
 
     useEffect(() => {
         let ignore = false;

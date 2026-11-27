@@ -213,6 +213,13 @@ pub fn effective_status<'a>(status: &'a str, marker: Option<&Paused>) -> &'a str
     }
 }
 
+/// A call launched in the foreground but moved to the background later (Ctrl+B)
+/// has a background task in main: treat it as background, so a pause does not
+/// send Esc and interrupt an unrelated main turn.
+pub fn runs_in_background(launched_bg: bool, bg: Option<BgState>) -> bool {
+    launched_bg || bg.is_some()
+}
+
 /// `effective_status`, plus main's view of the task: once a paused agent's stop
 /// notice (task killed/completed/failed) reached main, it has stopped even if
 /// the tree row still reads running. Without this a terminal pause waited for
@@ -287,9 +294,10 @@ fn info(ctx: &Ctx, key: &str) -> Option<Info> {
     };
     let st = lock(&ctx.store);
     let s = st.sessions.get(sid)?;
-    let call = find_call(&s.main, aid)?;
+    let mut call = find_call(&s.main, aid)?;
     let transcript = s.agents.get(aid)?.path.clone();
     let bg = s.main.bg_state_for_tool(&call.tool_use_id);
+    call.background = runs_in_background(call.background, bg);
     let status = crate::status_str(st.agent_status_of(sid, aid, discovery::now_ms())?);
     Some(Info {
         sid: sid.clone(),
@@ -686,6 +694,26 @@ mod tests {
     }
 
     #[test]
+    fn ctrl_b_backgrounded_agent_is_not_interrupted_with_escape() {
+        assert!(runs_in_background(false, Some(BgState::Running)));
+        assert!(runs_in_background(true, None));
+        assert!(!runs_in_background(false, None));
+        let mut c = call();
+        c.background = runs_in_background(false, Some(BgState::Running));
+        let steps = plan_action(
+            "pause",
+            "running",
+            false,
+            Channel::Terminal,
+            &c,
+            "/t/agent-a1.jsonl",
+            None,
+        )
+        .unwrap();
+        assert!(!steps.contains(&Step::Escape));
+    }
+
+    #[test]
     fn terminal_pause_counts_as_stopped_once_main_got_the_stop_notice() {
         let m = Paused {
             call: call(),
@@ -694,10 +722,19 @@ mod tests {
         };
         // Row still says running (transcript not quiet for 30 s yet), but main's
         // task notice says the agent was killed: resume/swap are allowed.
-        assert_eq!(status_for("running", Some(&m), Some(BgState::Killed)), "done");
-        assert_eq!(status_for("running", Some(&m), Some(BgState::Running)), "running");
+        assert_eq!(
+            status_for("running", Some(&m), Some(BgState::Killed)),
+            "done"
+        );
+        assert_eq!(
+            status_for("running", Some(&m), Some(BgState::Running)),
+            "running"
+        );
         // Without a marker the notice changes nothing (not ccmon's pause).
-        assert_eq!(status_for("running", None, Some(BgState::Killed)), "running");
+        assert_eq!(
+            status_for("running", None, Some(BgState::Killed)),
+            "running"
+        );
         let st = status_for("running", Some(&m), Some(BgState::Killed));
         assert!(plan("resume", st, true, Channel::Terminal).is_ok());
     }

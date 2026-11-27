@@ -15,13 +15,23 @@ pub const DIALOG_PENDING: &str =
 const DIALOG_LINES: usize = 15;
 
 /// Markers of Claude Code's permission and selection dialogs.
-const DIALOG_MARKERS: [&str; 5] = [
-    "Do you want to proceed?",
-    "Do you want to make this edit",
-    "Do you want to create ",
+const DIALOG_MARKERS: [&str; 4] = [
+    "Do you want to",
+    "Would you like to proceed",
     "❯ 1. Yes",
     "Enter to select",
 ];
+
+/// A dialog option row under the cursor: `❯ <n>. ...` at the start of the line
+/// (the input box draws `│ ❯ text`, which does not match).
+fn option_row(line: &str) -> bool {
+    let Some(rest) = line.trim_start().strip_prefix('❯') else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    digits > 0 && rest[digits..].starts_with(". ")
+}
 
 /// `io::Error` payload for a pending dialog (see `error_text`).
 #[derive(Debug)]
@@ -140,7 +150,7 @@ pub fn dialog_pending(text: &str) -> bool {
     let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
     let tail = &lines[lines.len().saturating_sub(DIALOG_LINES)..];
     tail.iter()
-        .any(|l| DIALOG_MARKERS.iter().any(|m| l.contains(m)))
+        .any(|l| option_row(l) || DIALOG_MARKERS.iter().any(|m| l.contains(m)))
 }
 
 /// User-facing text of a `send_text` / `ensure_no_dialog` error.
@@ -156,7 +166,7 @@ pub fn error_text(e: &io::Error) -> String {
 /// would confirm. Reads the visible pane (`capture-pane -p`), argv only.
 pub fn ensure_no_dialog(p: &Pane) -> io::Result<()> {
     let out = Command::new("tmux")
-        .args(["capture-pane", "-p", "-t", &p.id])
+        .args(["capture-pane", "-p", "-J", "-t", &p.id])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()?;
@@ -303,6 +313,23 @@ mod tests {
             old.push_str(&format!("line {i}\n"));
         }
         assert!(!dialog_pending(&old));
+    }
+
+    #[test]
+    fn dialog_pending_catches_other_prompts_and_moved_cursor() {
+        // WebFetch prompt with the cursor moved to option 2.
+        assert!(dialog_pending(
+            "Fetch\n Do you want to allow Claude to fetch this content?\n   1. Yes\n ❯ 2. No\n"
+        ));
+        // Plan-mode exit.
+        assert!(dialog_pending(
+            "Would you like to proceed?\n   1. Yes, and auto-accept edits\n ❯ 3. No, keep planning\n"
+        ));
+        // Any numbered option row under the cursor.
+        assert!(dialog_pending("Pick one\n ❯ 4. Something else\n"));
+        // The input box prompt `❯ text` is not an option row.
+        assert!(!dialog_pending("│ ❯ 1 more thing to try │\n"));
+        assert!(!dialog_pending("│ ❯ 12 files changed │\n"));
     }
 
     #[test]

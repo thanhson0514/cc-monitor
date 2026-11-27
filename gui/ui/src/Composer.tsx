@@ -21,7 +21,7 @@ export const LOCK_REASON: Record<string, string> = {
     unsupported: 'Hệ điều hành này chưa hỗ trợ gửi vào terminal — chỉ xem'
 };
 
-const TMUX_FIXED = 'Chỉ đổi được khi khởi động session';
+export const TMUX_FIXED = 'Chỉ đổi được khi khởi động session';
 
 const CAP_TABS: [CapKind, string][] = [
     ['skill', 'Skills'],
