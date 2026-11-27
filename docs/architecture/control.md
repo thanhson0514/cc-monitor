@@ -21,6 +21,11 @@ Spike run in an empty scratch dir with `--model haiku`, evidence taken mainly fr
 | disable one workflow | `--disallowedTools "Workflow(name)"` | OK (per-workflow form exists) | `Workflow(deep-research)` -> `<tr>` `Workflow deep-research blocked by permission rules`; with `Workflow(other)` the same call is not blocked (`Review dynamic workflow before running`). Tool stays listed |
 | resume + stream-json input | `--resume <sid>` + stdin JSON line | OK | session_id unchanged (`ef296c24...`, no fork); `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"say ok"}]}}` -> `assistant` + `result success` |
 | interrupt | stdin `{"type":"control_request","request_id":"..","request":{"subtype":"interrupt"}}` | OK | immediate `control_response {subtype:success, request_id, response:{still_queued:[]}}`, then `result error_during_execution`; process stays alive and next user message works (`result success`) |
+| stop subagent | stdin `{"type":"control_request","request_id":"..","request":{"subtype":"stop_task","task_id":"<agentId>"}}` | OK | immediate `control_response {subtype:success, request_id, response:{}}`; `task_id` = the `task_id` of the `task_started` event = `agentId` in the Agent tool_result = `agent-<id>.jsonl` (see Subagent control) |
+| mid-turn user line | stdin `user` JSON line written while a turn runs (Bash `sleep 20`) | OK (queued, not dropped) | line written at t=18.9s during the sleep; no error/event at write time; after the tool_result the model answered `first done\n\nMIDTURN-ACK` in the same turn and a single `result success` followed |
+| new `~/.claude/agents/<n>.md` while running (`-p`) | create file after process start, then `Agent(subagent_type=<n>)` | NOT picked up | tool_result (is_error) `Agent type 'ccmon-spike' not found. Available agents: claude, Explore, general-purpose, ...` |
+| new `~/.claude/agents/<n>.md` while running (interactive) | same, inside `claude` in tmux | OK (hot reload) | agent launched with no restart and returned `SPIKE`. Note `~/.claude/agents/` did not exist beforehand and was created after the session started; still picked up |
+| SendMessage to stopped subagent | `SendMessage{to:<agentId>}` after `stop_task` | NOT resumed | tool_result `{"success":false,"message":"Agent \"<id>\" was stopped and was not resumed. Treat its work as cancelled; only start a new agent for it if the user explicitly asks."}` |
 
 ## Facts Task 9 needs
 - `system/init` is emitted **per turn, after the user message arrives** (not at process start). With no input only `system/hook_started|hook_response` events appear. For a new session (no `--resume`) take the sid from the `session_id` field of the first stdout event of any kind.
@@ -39,3 +44,24 @@ Spike run in an empty scratch dir with `--model haiku`, evidence taken mainly fr
 ## Limitations
 - None blocking. Per-workflow disable works (`Workflow(name)`), so no fallback is used. Master switch `workflows_off` emits bare `Workflow` and supersedes per-workflow rules.
 - `--effort` effect is not observable in init; only the value validation was verified.
+
+## Subagent control (spike 2, Claude Code 2.1.326, `-p` stream-json, `--model haiku`)
+Setup: ask main to launch `Agent(subagent_type=general-purpose, run_in_background=true)` running `sleep 60`, then send `stop_task`.
+
+Events in order after the Agent tool_use (all on stdout, session_id omitted below):
+```
+{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"a8b144350a2b52866","run_id":"0mwymlxeh-4c324838","task_type":"local_agent","subagent_type":"general-purpose","description":"Sleep 60 then report done"}]}
+{"type":"system","subtype":"task_started","task_id":"a8b144350a2b52866","run_id":"..","tool_use_id":"toolu_01MA..","description":"..","subagent_type":"general-purpose","is_backgrounded":true,"spawn_depth":1,"task_type":"local_agent","prompt":".."}
+>> {"type":"control_request","request_id":"stop1","request":{"subtype":"stop_task","task_id":"a8b144350a2b52866"}}
+{"type":"system","subtype":"task_updated","task_id":"a8b..","run_id":"..","patch":{"status":"killed","end_time":1795762469505}}
+{"type":"system","subtype":"task_notification","task_id":"a8b..","run_id":"..","tool_use_id":"toolu_01MA..","status":"stopped","output_file":"/tmp/claude-1000/<mangled-cwd>/<sid>/tasks/a8b144350a2b52866.output","summary":"Sleep 60 then report done"}
+{"type":"system","subtype":"background_tasks_changed","tasks":[]}
+{"type":"control_response","response":{"subtype":"success","request_id":"stop1","response":{}}}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]},"parent_tool_use_id":"toolu_01MA..","agent_id":"a8b144350a2b52866","subagent_type":"general-purpose",...}
+```
+- Task status vocabulary seen: `task_updated.patch.status = "killed"`, `task_notification.status = "stopped"` (a completed Bash task gives `"completed"`). Bash commands also get `task_started` with `task_type:"local_bash"` and a short id (`bz28aqcxt`): filter on `task_type == "local_agent"` (or presence of `subagent_type`).
+- `task_id` for a subagent equals the `agentId` in the Agent tool_result (`agentId: a8b144350a2b52866 ... Use SendMessage with to: '<id>'`) and the `agent_id` on that subagent's own stream lines. Match `tool_use_id` back to the main-thread Agent tool_use.
+- Subagent transcript: `~/.claude/projects/<mangled-cwd>/<sid>/subagents/agent-<agentId>.jsonl` (verified: `.../34a6a8ef-.../subagents/agent-a8b144350a2b52866.jsonl`). So `task_id == <agentId>` of that filename.
+- What main sees after the stop: the `Agent` tool_result stays the launch text ("Async agent launched successfully ... agentId: <id> ..."), plus an injected status notification for `stopped`. On the next turn haiku said "a status notification says this agent was stopped, not completed" / "reported as stopped ... with a note that the user stopped it". The stop does not abort the main turn: the turn that launched the agent ended normally with `result success` (no `error_during_execution`).
+- `stop_task` with a valid id only succeeds while the task is running; the stopped agent cannot be resumed with `SendMessage` (see table), so a "swap" must start a new agent, not message the old one.
+- Caveat: the stop was issued ~0.1s after `task_started`, so the subagent had barely begun. Behaviour for a long-running subagent was not separately measured.
