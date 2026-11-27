@@ -68,7 +68,7 @@ pub fn check(live: &LiveInfo) -> Result<Pane, Block> {
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .output()
-        .map_err(|_| Block::PaneGone)?;
+        .map_err(|_| Block::Unsupported)?;
     if !out.status.success() {
         return Err(Block::PaneGone);
     }
@@ -140,10 +140,20 @@ pub fn send_text(p: &Pane, text: &str) -> io::Result<()> {
     if !child.wait()?.success() {
         return Err(io::Error::other("tmux load-buffer failed"));
     }
-    for argv in send_cmds(p, &buf) {
-        tmux_run(&argv)?;
+    let res = (|| {
+        for argv in send_cmds(p, &buf) {
+            let cancel = argv.get(3).map(String::as_str) == Some("-X");
+            match tmux_run(&argv) {
+                Err(e) if !cancel => return Err(e),
+                _ => {}
+            }
+        }
+        Ok(())
+    })();
+    if res.is_err() {
+        let _ = tmux_run(&["delete-buffer".into(), "-b".into(), buf]);
     }
-    Ok(())
+    res
 }
 
 pub fn send_escape(p: &Pane) -> io::Result<()> {
