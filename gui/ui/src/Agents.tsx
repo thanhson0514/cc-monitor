@@ -352,15 +352,13 @@ export function Agents({ sid, onOpenRun }: { sid: string | null; onOpenRun: (key
     const [form, setForm] = useState<{ def: AgentDef; scope: 'user' | 'project' } | 'new' | null>(null);
     const [tick, setTick] = useState(0);
     const [scope, setScope] = useState<'session' | 'project'>(sid ? 'session' : 'project');
-    const [usage, setUsage] = useState<Usage[]>([]);
+    const [usage, setUsage] = useState<Usage[] | null>(null);
     useEffect(() => {
         setScope(sid ? 'session' : 'project');
     }, [sid]);
     useEffect(() => {
-        if (!sid) {
-            setUsage([]);
-            return;
-        }
+        setUsage(null);
+        if (!sid) return;
         let ignore = false;
         api.sessionUsage(sid)
             .then((u) => !ignore && setUsage(u))
@@ -377,6 +375,9 @@ export function Agents({ sid, onOpenRun }: { sid: string | null; onOpenRun: (key
     // Default project: the selected session's cwd (until the user picks one).
     const [projectPicked, setProjectPicked] = useState(false);
     useEffect(() => {
+        setProjectPicked(false);
+    }, [sid]);
+    useEffect(() => {
         if (projectPicked) return;
         if (!sid) {
             setProject(PROJECT_NONE);
@@ -391,26 +392,51 @@ export function Agents({ sid, onOpenRun }: { sid: string | null; onOpenRun: (key
         if (project === null) return;
         let ignore = false;
         setErr(null);
-        const cwd = project || null;
-        api.listAgents(null, cwd)
+        const bySession = sessionOnly ? sid : null;
+        const cwd = sessionOnly ? null : project || null;
+        api.listAgents(bySession, cwd)
             .then((a) => !ignore && setAgents(a))
             .catch((e) => !ignore && (setErr(String(e)), setAgents([])));
-        api.listWorkflows(null, cwd)
+        api.listWorkflows(bySession, cwd)
             .then((w) => !ignore && setWorkflows(w))
             .catch((e) => !ignore && (setErr(String(e)), setWorkflows([])));
         return () => {
             ignore = true;
         };
-    }, [project, tick]);
+    }, [project, tick, sessionOnly, sid]);
 
     // id -> usage, only entries actually used in this session
     const usedMap = useMemo(() => {
         const m = new Map<string, Usage>();
-        for (const u of usage) if (u.state === 'used' && u.kind === tab) m.set(u.id, u);
+        for (const u of usage ?? []) if (u.state === 'used' && u.kind === tab) m.set(u.id, u);
         return m;
     }, [usage, tab]);
-    const scoped = (l: AgentItem[] | null, k: Tab) =>
-        sessionOnly && l ? l.filter((c) => usage.some((u) => u.state === 'used' && u.kind === k && u.id === c.id)) : l;
+    const scoped = (l: AgentItem[] | null, k: Tab): AgentItem[] | null => {
+        if (!sessionOnly) return l;
+        if (!l || !usage) return null;
+        const used = usage.filter((u) => u.state === 'used' && u.kind === k);
+        const have = new Set(l.map((c) => c.id));
+        const known = l.filter((c) => used.some((u) => u.id === c.id));
+        const extra: AgentItem[] = used
+            .filter((u) => !have.has(u.id))
+            .map((u) => ({
+                kind: k,
+                id: u.id,
+                name: u.id,
+                description: '',
+                scope: 'managed',
+                path: null,
+                enabledGlobally: true,
+                meta: {},
+                disabled: false,
+                runs: u.count,
+                lastRun: u.last,
+                body: null,
+                editable: false,
+                truncated: false
+            }));
+        return [...known, ...extra];
+    };
     const agentsView = useMemo(() => scoped(agents, 'agent'), [agents, usage, sessionOnly]);
     const workflowsView = useMemo(() => scoped(workflows, 'workflow'), [workflows, usage, sessionOnly]);
     const items = tab === 'agent' ? agentsView : workflowsView;
@@ -472,6 +498,7 @@ export function Agents({ sid, onOpenRun }: { sid: string | null; onOpenRun: (key
                 <select
                     className="cmp-chip ag-project"
                     value={project ?? PROJECT_NONE}
+                    disabled={sessionOnly}
                     title="Dự án: agent/workflow cấp dự án được đọc từ thư mục này"
                     onChange={(e) => {
                         setProjectPicked(true);
