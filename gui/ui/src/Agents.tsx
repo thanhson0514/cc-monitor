@@ -148,10 +148,12 @@ function Detail({
                             Sửa
                         </button>
                     )}
-                    <label className="ag-switch" title={kind === 'agent' ? 'Tắt: mọi session chạy từ ccmon sẽ chặn agent này. File và lịch sử được giữ nguyên.' : 'Tắt: mọi session chạy từ ccmon sẽ chặn workflow này. File và lịch sử được giữ nguyên.'}>
+                    {item.meta.synthetic !== true && (
+                        <label className="ag-switch" title={kind === 'agent' ? 'Tắt: mọi session chạy từ ccmon sẽ chặn agent này. File và lịch sử được giữ nguyên.' : 'Tắt: mọi session chạy từ ccmon sẽ chặn workflow này. File và lịch sử được giữ nguyên.'}>
                         <span>Bật trong ccmon</span>
                         <button type="button" className={`switch live ${item.disabled ? '' : 'on'}`} role="switch" aria-checked={!item.disabled} onClick={onToggle} />
-                    </label>
+                        </label>
+                    )}
                 </span>
             </div>
             {item.description ? <p className="ag-desc">{item.description}</p> : <p className="ag-desc muted">Không có mô tả.</p>}
@@ -358,11 +360,13 @@ export function Agents({ sid, onOpenRun }: { sid: string | null; onOpenRun: (key
     }, [sid]);
     useEffect(() => {
         setUsage(null);
+    }, [sid]);
+    useEffect(() => {
         if (!sid) return;
         let ignore = false;
         api.sessionUsage(sid)
             .then((u) => !ignore && setUsage(u))
-            .catch(() => !ignore && setUsage([]));
+            .catch((e) => !ignore && (setErr(String(e)), setUsage((u) => u ?? [])));
         return () => {
             ignore = true;
         };
@@ -427,7 +431,7 @@ export function Agents({ sid, onOpenRun }: { sid: string | null; onOpenRun: (key
                 scope: 'managed',
                 path: null,
                 enabledGlobally: true,
-                meta: {},
+                meta: { synthetic: true },
                 disabled: false,
                 runs: u.count,
                 lastRun: u.last,
