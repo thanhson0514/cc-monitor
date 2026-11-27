@@ -374,7 +374,7 @@ dependencies = [
 
 [[package]]
 name = "cc-monitor"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -391,7 +391,7 @@ dependencies = [
 
 [[package]]
 name = "ccmon-gui"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "cc-monitor",
  "serde",
