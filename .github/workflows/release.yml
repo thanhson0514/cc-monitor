@@ -64,8 +64,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Release notes: this version's section of CHANGELOG.md, then the download hint.
+          ver="${TAG#v}"
+          awk -v v="$ver" '
+            /^## \[/ { on = index($0, "## [" v "]") == 1; next }
+            /^\[[^]]+\]: / { next }
+            on' CHANGELOG.md 2>/dev/null > notes.md || true
+          printf '\n---\nDownload the installer for your OS below. See the README for setup.\n' >> notes.md
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --title "ccmon $TAG" \
-            --notes "Download the installer for your OS below. See the README for setup."
+            --notes-file notes.md
           echo "id=$(gh release view "$TAG" --json databaseId -q .databaseId)" >> "$GITHUB_OUTPUT"
 
   desktop:
